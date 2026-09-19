@@ -1,0 +1,12 @@
+{{template "head" .}}
+<h2>History: {{.Entity.Singular}} #{{.ID}}</h2>
+<p><a href="/{{.Entity.Key}}">← Back to {{.Entity.Plural}}</a></p>
+{{range .Items}}
+  <article>
+    <header><strong>{{.Note}}</strong> · <small>{{.At}} UTC</small></header>
+    <ul>{{range .Changes}}<li>{{.}}</li>{{end}}</ul>
+  </article>
+{{else}}
+  <p>No history recorded.</p>
+{{end}}
+{{template "foot" .}}

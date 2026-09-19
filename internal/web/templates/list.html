@@ -1,0 +1,29 @@
+{{template "head" .}}
+<h2>{{.Entity.Plural}}</h2>
+<p><a role="button" href="/{{.Entity.Key}}/new">Add {{.Entity.Singular}}</a></p>
+{{if .Rows}}
+<div class="overflow-auto">
+<table>
+  <thead>
+    <tr>{{range .Cols}}<th>{{.Label}}</th>{{end}}<th></th></tr>
+  </thead>
+  <tbody>
+  {{range .Rows}}
+    <tr>
+      {{range .Cells}}<td>{{.}}</td>{{end}}
+      <td>
+        <a href="/{{$.Entity.Key}}/{{.ID}}/edit">Edit</a> ·
+        <a href="/{{$.Entity.Key}}/{{.ID}}/history">History</a> ·
+        <a href="#" hx-post="/{{$.Entity.Key}}/{{.ID}}/delete"
+           hx-confirm="Delete this {{$.Entity.Singular}}?"
+           hx-target="closest tr" hx-swap="outerHTML">Delete</a>
+      </td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p>No {{.Entity.Plural}} yet.</p>
+{{end}}
+{{template "foot" .}}

@@ -1,0 +1,49 @@
+{{template "head" .}}
+<h2>{{.Title}}</h2>
+{{if .Error}}<p role="alert"><mark>{{.Error}}</mark></p>{{end}}
+<form method="post" action="{{.Action}}">
+  {{range .Entity.Fields}}{{$f := .}}
+    {{if eq .Kind "textarea"}}
+      <label>{{.Label}}
+        <textarea name="{{.Name}}" rows="4">{{index $.Values .Name}}</textarea>
+      </label>
+    {{else if eq .Kind "bool"}}
+      <label>
+        <input type="checkbox" name="{{.Name}}" value="1" {{if eq (index $.Values .Name) "1"}}checked{{end}}>
+        {{.Label}}
+      </label>
+    {{else if eq .Kind "number"}}
+      <label>{{.Label}}
+        <input type="number" name="{{.Name}}" value="{{index $.Values .Name}}" {{if .Required}}required{{end}}>
+      </label>
+    {{else if or (eq .Kind "select") (eq .Kind "ref")}}
+      <label>{{.Label}}
+        <select name="{{.Name}}" {{if .Required}}required{{end}}>
+          <option value="">—</option>
+          {{range index $.Choices .Name}}
+            <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+          {{end}}
+        </select>
+      </label>
+    {{else if eq .Kind "multi"}}
+      <fieldset>
+        <legend>{{.Label}}</legend>
+        {{range index $.Choices .Name}}
+          <label>
+            <input type="checkbox" name="{{$f.Name}}" value="{{.Value}}" {{if .Selected}}checked{{end}}>
+            {{.Label}}
+          </label>
+        {{else}}
+          <small>None defined yet.</small>
+        {{end}}
+      </fieldset>
+    {{else}}
+      <label>{{.Label}}
+        <input type="text" name="{{.Name}}" value="{{index $.Values .Name}}" {{if .Required}}required{{end}}>
+      </label>
+    {{end}}
+  {{end}}
+  <button type="submit">Save</button>
+  <a href="/{{.Entity.Key}}" role="button" class="secondary outline">Cancel</a>
+</form>
+{{template "foot" .}}

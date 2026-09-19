@@ -1,0 +1,16 @@
+{{template "head" .}}
+<h1>LabDoc</h1>
+<p>Homelab system of record. Every change is versioned automatically.</p>
+<table>
+  <thead><tr><th>Section</th><th>Records</th><th></th></tr></thead>
+  <tbody>
+  {{range .Entries}}
+    <tr>
+      <td><a href="/{{.Entity.Key}}">{{.Entity.Plural}}</a></td>
+      <td>{{.Count}}</td>
+      <td><a href="/{{.Entity.Key}}/new">Add {{.Entity.Singular}}</a></td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{template "foot" .}}

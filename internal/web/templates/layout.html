@@ -1,0 +1,26 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · LabDoc</title>
+  <link rel="stylesheet" href="/static/pico.min.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body hx-boost="true">
+  <header>
+    <nav>
+      <ul><li><strong><a href="/">LabDoc</a></strong></li></ul>
+      <ul>
+        {{range .Nav}}<li><a href="/{{.Key}}">{{.Plural}}</a></li>{{end}}
+      </ul>
+    </nav>
+  </header>
+  <main>
+{{end}}
+{{define "foot"}}
+  </main>
+  <footer><small>LabDoc v{{version}}</small></footer>
+</body>
+</html>
+{{end}}
