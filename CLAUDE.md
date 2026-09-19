@@ -10,7 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 CGO_ENABLED=0 go build -o labdoc ./cmd/labdoc   # static build; keep CGO off
-go vet ./...                                    # no tests exist yet
+go vet ./... && go test ./...                     # tests: internal/db, internal/web (CGO off)
+go test ./internal/web -run TestValidation -v   # single test
 ./labdoc -addr :8080 -db homelab.db             # also LABDOC_ADDR / LABDOC_DB
 ./labdoc -backup out.db                         # VACUUM INTO copy, safe while running
 # stamp version (default lives in internal/version):

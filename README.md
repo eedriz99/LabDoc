@@ -26,7 +26,7 @@ Stamp a release version and cross-compile for a Linux LXC:
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X labdoc/internal/version.Version=0.2.0" -o labdoc ./cmd/labdoc
 ```
 
-Other commands: `go vet ./...`. There are no automated tests yet.
+Test and vet: `CGO_ENABLED=0 go vet ./... && CGO_ENABLED=0 go test ./...`. CI runs the same on every push and pull request.
 
 ## Deploy
 
