@@ -15,7 +15,8 @@ import (
 func main() {
 	addr := flag.String("addr", envOr("LABDOC_ADDR", ":8080"), "listen address")
 	dbPath := flag.String("db", envOr("LABDOC_DB", "homelab.db"), "SQLite database path")
-	showVersion := flag.Bool("version", false, "print version and exit")
+	backup := flag.String("backup", "", "write a consistent copy of the database to this path and exit")
+	showVersion :=flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
 	if *showVersion {
@@ -28,6 +29,14 @@ func main() {
 		log.Fatalf("open db: %v", err)
 	}
 	defer d.Close()
+
+	if *backup != "" {
+		if err := db.Backup(d, *backup); err != nil {
+			log.Fatalf("backup: %v", err)
+		}
+		fmt.Println("backup written to", *backup)
+		return
+	}
 
 	srv, err := web.New(d)
 	if err != nil {

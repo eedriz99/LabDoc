@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,6 +33,16 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return d, nil
+}
+
+// Backup writes a consistent single-file copy of the database to dest, safe
+// to run while the app is serving. dest must not already exist.
+func Backup(d *sql.DB, dest string) error {
+	if _, err := os.Stat(dest); err == nil {
+		return fmt.Errorf("%s already exists", dest)
+	}
+	_, err := d.Exec("VACUUM INTO '" + strings.ReplaceAll(dest, "'", "''") + "'")
+	return err
 }
 
 // migrate applies migrations/NNNN_name.sql files in order, tracking the

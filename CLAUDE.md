@@ -4,7 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Pre-implementation. The only file is `homelab-docs-mvp-requirements.md`, which is the source of truth for scope, stack, and data model. There is no code, build system, or git repo yet. Update this file (especially a Commands section) once the Go skeleton exists; no build/lint/test commands have been defined yet.
+`homelab-docs-mvp-requirements.md` is the source of truth for scope, stack, and data model. Build phases 1-3 are done (schema/migrations, CRUD for all entities, automatic revisions plus a per-entity History page). Not built yet: FTS5 search, Markdown pages, Markdown export, topology SVG. License: GPL-3.0.
+
+## Commands
+
+```bash
+CGO_ENABLED=0 go build -o labdoc ./cmd/labdoc   # static build; keep CGO off
+go vet ./...                                    # no tests exist yet
+./labdoc -addr :8080 -db homelab.db             # also LABDOC_ADDR / LABDOC_DB
+./labdoc -backup out.db                         # VACUUM INTO copy, safe while running
+# stamp version (default lives in internal/version):
+go build -ldflags "-s -w -X labdoc/internal/version.Version=X.Y.Z" ./cmd/labdoc
+```
+
+## Code layout notes
+
+- `internal/web/entities.go` declares each editable entity (fields, kinds, refs). `crud.go` holds the generic list/form/save/delete/history handlers driven by it. To add an entity, add a migration plus one entry there; templates are generic.
+- The SQLite pool is capped at one connection. Inside a transaction, only use the `tx`; touching `s.db` deadlocks. Read all rows (`queryAll`) before issuing the next query.
+- Validation errors re-render the form with status 200 because htmx does not swap 4xx responses. The UI uses `hx-boost` on `<body>` with full-page handlers.
+- FK cascades (e.g. deleting a VLAN) do not write revisions for the affected child rows.
 
 ## What this is
 

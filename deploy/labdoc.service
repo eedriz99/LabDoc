@@ -1,0 +1,17 @@
+[Unit]
+Description=LabDoc homelab documentation
+After=network.target
+
+[Service]
+User=labdoc
+Environment=LABDOC_ADDR=127.0.0.1:8080
+Environment=LABDOC_DB=/var/lib/labdoc/homelab.db
+ExecStart=/usr/local/bin/labdoc
+Restart=on-failure
+StateDirectory=labdoc
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
