@@ -20,7 +20,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Println("labdoc", version.Version)
+		fmt.Println("labdoc", version.String())
 		return
 	}
 
@@ -28,7 +28,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	if *backup != "" {
 		if err := db.Backup(d, *backup); err != nil {

@@ -29,7 +29,7 @@ func Open(path string) (*sql.DB, error) {
 	// Single operator, tiny workload: one connection avoids writer contention.
 	d.SetMaxOpenConns(1)
 	if err := migrate(d); err != nil {
-		d.Close()
+		_ = d.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return d, nil
@@ -80,12 +80,12 @@ func migrate(d *sql.DB) error {
 			return err
 		}
 		if _, err := tx.Exec(string(body)); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return fmt.Errorf("%s: %w", name, err)
 		}
 		// PRAGMA does not accept bound parameters.
 		if _, err := tx.Exec("PRAGMA user_version = " + strconv.Itoa(version)); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return err
 		}
 		if err := tx.Commit(); err != nil {

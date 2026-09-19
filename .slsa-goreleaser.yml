@@ -1,0 +1,17 @@
+version: 1
+
+env:
+  - CGO_ENABLED=0
+
+flags:
+  - -trimpath
+
+goos: linux
+goarch: amd64
+
+main: ./cmd/labdoc
+binary: labdoc-{{ .Os }}-{{ .Arch }}
+
+ldflags:
+  - "-s -w"
+  - "-X labdoc/internal/version.Version={{ .Env.VERSION }}"

@@ -107,7 +107,7 @@ func queryAll(q queryer, query string, args ...any) ([][]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, err := rows.Columns()
 	if err != nil {
 		return nil, err
@@ -185,7 +185,7 @@ func (e *Entity) parse(r *http.Request) ([]any, error) {
 		}
 		if v == "" {
 			if f.Required {
-				return nil, fmt.Errorf("%s is required.", f.Label)
+				return nil, fmt.Errorf("%s is required", f.Label)
 			}
 			switch f.Kind {
 			case kNumber, kRef:
@@ -199,7 +199,7 @@ func (e *Entity) parse(r *http.Request) ([]any, error) {
 		case kNumber, kRef:
 			n, err := strconv.ParseInt(v, 10, 64)
 			if err != nil {
-				return nil, fmt.Errorf("%s must be a number.", f.Label)
+				return nil, fmt.Errorf("%s must be a number", f.Label)
 			}
 			args = append(args, n)
 		case kSelect:
@@ -208,7 +208,7 @@ func (e *Entity) parse(r *http.Request) ([]any, error) {
 				ok = ok || o == v
 			}
 			if !ok {
-				return nil, fmt.Errorf("%s has an invalid value.", f.Label)
+				return nil, fmt.Errorf("%s has an invalid value", f.Label)
 			}
 			args = append(args, v)
 		default:
@@ -237,7 +237,7 @@ func (s *Server) write(e *Entity, id int64, args []any, multi map[string][]strin
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	cols := e.columnNames()
 	note := "updated"
@@ -273,7 +273,7 @@ func (s *Server) write(e *Entity, id int64, args []any, multi map[string][]strin
 		for _, v := range multi[f.Name] {
 			n, err := strconv.ParseInt(v, 10, 64)
 			if err != nil {
-				return 0, fmt.Errorf("%s has an invalid value.", f.Label)
+				return 0, fmt.Errorf("%s has an invalid value", f.Label)
 			}
 			if _, err := tx.Exec("INSERT OR IGNORE INTO "+j.Table+" ("+j.Owner+", "+j.Other+") VALUES (?, ?)", id, n); err != nil {
 				return 0, err
@@ -480,7 +480,7 @@ func (s *Server) remove(e *Entity, id int64) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	snap, err := e.snapshot(tx, id)
 	if err != nil {
 		return err

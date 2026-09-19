@@ -27,7 +27,7 @@ type Server struct {
 
 func New(db *sql.DB) (*Server, error) {
 	tmpl, err := template.New("").
-		Funcs(template.FuncMap{"version": func() string { return version.Version }}).
+		Funcs(template.FuncMap{"version": func() string { return version.String() }}).
 		ParseFS(templateFS, "templates/*.html")
 	if err != nil {
 		return nil, err
@@ -49,7 +49,7 @@ func (s *Server) Routes() http.Handler {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	})
 	for _, e := range entities {
 		s.mountCRUD(r, e)
