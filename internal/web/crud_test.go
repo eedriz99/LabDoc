@@ -193,7 +193,11 @@ func TestNotFoundAndHealth(t *testing.T) {
 	if code, body := e.get("/healthz"); code != 200 || body != "ok" {
 		t.Errorf("healthz = %d %q", code, body)
 	}
-	if code, body := e.get("/"); code != 200 || !strings.Contains(body, "<footer>") {
+	code, body := e.get("/")
+	if code != 200 || !strings.Contains(body, "<footer>") {
 		t.Errorf("index = %d, expected footer with version", code)
+	}
+	if !strings.Contains(body, `id="theme-toggle"`) {
+		t.Error("index should include the dark mode toggle")
 	}
 }

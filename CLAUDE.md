@@ -18,6 +18,10 @@ go test ./internal/web -run TestValidation -v   # single test
 go build -ldflags "-s -w -X labdoc/internal/version.Version=X.Y.Z" ./cmd/labdoc
 ```
 
+## Versioning
+
+Bump `Version` in `internal/version/version.go` with every shipped change (feature = minor, fix = patch) and mention it in the summary. Release tags are `vX.Y.Z`; the SLSA workflow stamps the binary from the tag.
+
 ## Code layout notes
 
 - `internal/web/entities.go` declares each editable entity (fields, kinds, refs). `crud.go` holds the generic list/form/save/delete/history handlers driven by it. To add an entity, add a migration plus one entry there; templates are generic.
