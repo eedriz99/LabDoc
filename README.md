@@ -7,10 +7,12 @@ It is a web app: one static Go binary plus one SQLite file. No runtime dependenc
 ## Features
 
 - Create, edit, and delete devices, VLANs, services, IP assignments, and firewall rules from the browser.
+- Devices have a **type** (server, PC / workstation, laptop, NAS, switch, router, firewall, access point, other) and optional **drive types**: tick any of SSD, HDD, and NVMe (combine them freely). Drive types show as colored badges in the device list. Devices that existed before v1.1.0 were set to "Server", so change your switches, routers, and firewalls to their real type.
+- **Connections:** record how each device plugs into a switch or router: device NIC and switch port, and whether the link is an **Access** port (one untagged VLAN) or a **Trunk** (one or more tagged VLANs, plus an optional native VLAN). One NIC carrying, say, VLAN 10 for hypervisor management and VLAN 30 for services is a single trunk connection. A switch or device port can only be used once.
 - Automatic revision history: every change is versioned, and each record has a History page showing what changed and when.
 - Light and dark themes: follows your OS setting by default, with a toggle in the nav bar (choice is remembered per browser).
 - Consistent online backup via `-backup`, and a version shown in the page footer.
-- **Network topology designer:** drag-and-drop diagrams (routers, firewalls, switches, servers, VLANs, and more) with labeled links. Add nodes from your inventory (or import it all, with devices linked to their VLANs and services to their hosts), then download as SVG or PNG or share a read-only link.
+- **Network topology designer:** drag-and-drop diagrams (routers, firewalls, switches, servers, VLANs, and more) with labeled links. Add nodes from your inventory (or import it all: a device becomes a switch, router, firewall, etc. node according to its type, network gear goes in its own row, devices are linked to their VLANs and services to their hosts, and each Connection becomes a link labeled like `Trunk: 10,30 (native 1)` or `Access: 20`), then download as SVG or PNG or share a read-only link.
 
 Not built yet: full-text search, and Markdown pages and export.
 
@@ -19,8 +21,9 @@ Not built yet: full-text search, and Markdown pages and export.
 Open **Topology** in the nav, create a diagram, and:
 
 - **Add node** places a node of the chosen type. Click it to rename it or change its type, and drag it to move it (positions snap to a grid).
-- **Link mode** connects two nodes: click one, then the other. Click a link to label or delete it. **Delete** also works with the Delete key.
+- **Link mode** connects two nodes: click one, then the other. Click a link to label it, set its **line type** (plain, access = thin green, trunk = thick purple), or delete it. **Delete** also works with the Delete key.
 - **Add from inventory** and **Import all inventory** create nodes from your devices, VLANs, and services. Only names are used, never IP addresses, unless you type them into a label yourself.
+- **Recording links as Connections:** a line in the diagram is only a picture. To keep it in the Connections records, click the link and choose **Record as connection**. It opens the Connections form with the device, switch and mode already filled in, and you add the ports and VLANs. Both ends must be inventory devices: pick a node and set its **Inventory device**, or add it with Add from inventory. A note above the canvas counts links that are not recorded yet, and the panel shows "Recorded in Connections" once they are.
 - **Save** stores the diagram. Each changed save is recorded in the revision log (there is no History page for diagrams yet). **Download SVG/PNG** save first, then export the saved diagram. PNGs are rendered in your browser.
 
 ### Sharing a diagram

@@ -1,6 +1,9 @@
 package web
 
-import "strings"
+import (
+	"net/http"
+	"strings"
+)
 
 // Field kinds understood by the generic CRUD handlers and form template.
 const (
@@ -11,7 +14,18 @@ const (
 	kSelect   = "select" // fixed Options
 	kRef      = "ref"    // foreign key to another entity (Ref)
 	kMulti    = "multi"  // many-to-many via Join
+	kChecks   = "checks" // any subset of fixed Options, stored comma-separated in one column
 )
+
+// deviceTypes are the choices for a device's type. The topology designer maps
+// each to a node type in deviceTopoKind (topology.go); keep them in step.
+var deviceTypes = []string{
+	"Server", "PC / Workstation", "Laptop", "NAS",
+	"Switch", "Router", "Firewall", "Access point", "Other",
+}
+
+// driveTypes may be combined on one device (e.g. an SSD boot drive plus HDD storage).
+var driveTypes = []string{"SSD", "HDD", "NVMe"}
 
 type Join struct{ Table, Owner, Other string }
 
@@ -20,7 +34,10 @@ type Field struct {
 	Label    string
 	Kind     string
 	Required bool
-	Options  []string // kSelect
+	Options  []string // kSelect, kChecks
+	Default  string   // pre-selected value on the "new" form (kSelect)
+	Badge    bool     // show the value as a colored badge in lists (kSelect)
+	Short    string   // shorter column header for lists; Label is used if empty
 	Ref      string   // kRef / kMulti: key of the referenced entity
 	Join     *Join    // kMulti
 }
@@ -37,6 +54,8 @@ type Entity struct {
 	// other entities. It may only use columns of Table.
 	LabelSQL string
 	Fields   []Field
+	// Validate, if set, runs after field parsing for rules that span fields.
+	Validate func(*http.Request) error
 }
 
 var entities = []*Entity{
@@ -45,9 +64,11 @@ var entities = []*Entity{
 		OrderBy: "name", LabelSQL: "name",
 		Fields: []Field{
 			{Name: "name", Label: "Name", Kind: kText, Required: true},
+			{Name: "type", Label: "Device type", Kind: kSelect, Required: true, Options: deviceTypes, Default: "Server"},
 			{Name: "role", Label: "Role", Kind: kText},
 			{Name: "ram", Label: "RAM", Kind: kText},
-			{Name: "storage", Label: "Storage", Kind: kText},
+			{Name: "storage", Label: "Storage capacity", Kind: kText},
+			{Name: "drive_types", Label: "Drive types", Kind: kChecks, Options: driveTypes},
 			{Name: "vlans", Label: "VLANs", Kind: kMulti, Ref: "vlans",
 				Join: &Join{Table: "device_vlans", Owner: "device_id", Other: "vlan_id"}},
 			{Name: "notes", Label: "Notes", Kind: kTextarea},
@@ -95,6 +116,21 @@ var entities = []*Entity{
 			{Name: "to_vlan_id", Label: "To VLAN", Kind: kRef, Ref: "vlans", Required: true},
 			{Name: "allowed", Label: "Allowed", Kind: kBool},
 			{Name: "description", Label: "Description", Kind: kText},
+		},
+	},
+	{
+		Key: "connections", Table: "connections", Singular: "connection", Plural: "Connections",
+		OrderBy: "device_id", LabelSQL: "device_port", Validate: validateConnection,
+		Fields: []Field{
+			{Name: "device_id", Label: "Device", Kind: kRef, Ref: "devices", Required: true},
+			{Name: "device_port", Label: "Device NIC / port", Short: "Device port", Kind: kText},
+			{Name: "switch_id", Label: "Connected to (switch / router)", Short: "Switch", Kind: kRef, Ref: "devices", Required: true},
+			{Name: "switch_port", Label: "Switch port", Kind: kText},
+			{Name: "mode", Label: "Mode", Kind: kSelect, Required: true, Options: connectionModes, Default: "Access", Badge: true},
+			{Name: "untagged_vlan_id", Label: "Untagged VLAN (access VLAN, or native VLAN on a trunk)", Short: "Untagged VLAN", Kind: kRef, Ref: "vlans"},
+			{Name: "tagged_vlans", Label: "Tagged VLANs (trunk only)", Short: "Tagged VLANs", Kind: kMulti, Ref: "vlans",
+				Join: &Join{Table: "connection_vlans", Owner: "connection_id", Other: "vlan_id"}},
+			{Name: "notes", Label: "Notes", Kind: kTextarea},
 		},
 	},
 }
@@ -156,4 +192,12 @@ func (e *Entity) listSQL() string {
 		}
 	}
 	return "SELECT " + strings.Join(exprs, ", ") + " FROM " + e.Table + " t ORDER BY t." + e.OrderBy + ", t.id"
+}
+
+// Header is the column title used in list tables.
+func (f Field) Header() string {
+	if f.Short != "" {
+		return f.Short
+	}
+	return f.Label
 }

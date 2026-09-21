@@ -69,6 +69,7 @@ type topoLink struct {
 	From  string `json:"from"`
 	To    string `json:"to"`
 	Label string `json:"label"`
+	Style string `json:"style,omitempty"` // "", "access" or "trunk"
 }
 
 type topoLayout struct {
@@ -165,6 +166,9 @@ func (p *topoPayload) validate() error {
 		if l.From == l.To {
 			return errors.New("a link cannot connect a node to itself")
 		}
+		if l.Style != "" && l.Style != "access" && l.Style != "trunk" {
+			return fmt.Errorf("unknown link type %q", l.Style)
+		}
 		l.Label = strings.TrimSpace(l.Label)
 		if utf8.RuneCountInString(l.Label) > maxTopoLabel {
 			return fmt.Errorf("link label too long (max %d characters)", maxTopoLabel)
@@ -234,16 +238,9 @@ func renderTopologySVG(name string, l topoLayout) string {
 		}
 		x1, y1 := from.X+topoNodeWidth(from.Label)/2, from.Y+topoNodeH/2
 		x2, y2 := to.X+topoNodeWidth(to.Label)/2, to.Y+topoNodeH/2
-		fmt.Fprintf(&b, `<line x1="%s" y1="%s" x2="%s" y2="%s" stroke="#64748b" stroke-width="2"/>`+"\n",
-			num(x1), num(y1), num(x2), num(y2))
-		if k.Label != "" {
-			mx, my := (x1+x2)/2, (y1+y2)/2
-			w := float64(utf8.RuneCountInString(k.Label))*7 + 12
-			fmt.Fprintf(&b, `<rect x="%s" y="%s" width="%s" height="20" rx="4" fill="#ffffff" stroke="#cbd5e1"/>`+"\n",
-				num(mx-w/2), num(my-10), num(w))
-			fmt.Fprintf(&b, `<text x="%s" y="%s" font-size="12" text-anchor="middle" fill="#334155">%s</text>`+"\n",
-				num(mx), num(my+4), esc(k.Label))
-		}
+		stroke, width := topoLinkStyle(k.Style)
+		fmt.Fprintf(&b, `<line x1="%s" y1="%s" x2="%s" y2="%s" stroke="%s" stroke-width="%d"/>`+"\n",
+			num(x1), num(y1), num(x2), num(y2), stroke, width)
 	}
 	for _, n := range l.Nodes {
 		kind := topoKindByKey[n.Kind]
@@ -254,6 +251,21 @@ func renderTopologySVG(name string, l topoLayout) string {
 			num(n.X+w/2), num(n.Y+20), kind.Color, esc(strings.ToUpper(kind.Label)))
 		fmt.Fprintf(&b, `<text x="%s" y="%s" font-size="14" font-weight="700" text-anchor="middle" fill="#0f172a">%s</text>`+"\n",
 			num(n.X+w/2), num(n.Y+40), esc(n.Label))
+	}
+	// Link labels last so nodes never cover them.
+	for _, k := range l.Links {
+		from, ok1 := byID[k.From]
+		to, ok2 := byID[k.To]
+		if !ok1 || !ok2 || k.Label == "" {
+			continue
+		}
+		mx := (from.X + topoNodeWidth(from.Label)/2 + to.X + topoNodeWidth(to.Label)/2) / 2
+		my := (from.Y + to.Y + topoNodeH) / 2
+		w := float64(utf8.RuneCountInString(k.Label))*7 + 12
+		fmt.Fprintf(&b, `<rect x="%s" y="%s" width="%s" height="20" rx="4" fill="#ffffff" stroke="#cbd5e1"/>`+"\n",
+			num(mx-w/2), num(my-10), num(w))
+		fmt.Fprintf(&b, `<text x="%s" y="%s" font-size="12" text-anchor="middle" fill="#334155">%s</text>`+"\n",
+			num(mx), num(my+4), esc(k.Label))
 	}
 	b.WriteString("</svg>\n")
 	return b.String()
@@ -317,12 +329,50 @@ type topoListPage struct {
 type invItem struct {
 	ID    int64  `json:"id"`
 	Label string `json:"label"`
+	Num   int64  `json:"num,omitempty"` // VLAN number
 }
 
 type invDevice struct {
 	ID    int64   `json:"id"`
 	Label string  `json:"label"`
+	Kind  string  `json:"kind"` // topology node type, derived from the device type
 	VLANs []int64 `json:"vlans"`
+}
+
+// deviceTopoKind maps a device type to the topology node type used when the
+// device is imported into a diagram. Unknown types fall back to "server".
+var deviceTopoKind = map[string]string{
+	"Server":           "server",
+	"NAS":              "server",
+	"PC / Workstation": "client",
+	"Laptop":           "client",
+	"Switch":           "switch",
+	"Router":           "router",
+	"Firewall":         "firewall",
+	"Access point":     "ap",
+	"Other":            "other",
+}
+
+// invConn is a device-to-switch connection, used to draw and label diagram links.
+type invConn struct {
+	Device   int64   `json:"device"`
+	Switch   int64   `json:"switch"`
+	Mode     string  `json:"mode"` // "Access" or "Trunk"
+	Untagged int64   `json:"untagged"`
+	Tagged   []int64 `json:"tagged"`
+}
+
+// topoLinkStyle returns the stroke color and width for a link type. Trunks are
+// thick and purple, access links thin and green, everything else plain grey.
+// The editor (topology.js) uses the same values.
+func topoLinkStyle(style string) (string, int) {
+	switch style {
+	case "trunk":
+		return "#7c3aed", 4
+	case "access":
+		return "#15803d", 2
+	}
+	return "#64748b", 2
 }
 
 type invService struct {
@@ -333,9 +383,10 @@ type invService struct {
 }
 
 type topoInventory struct {
-	VLANs    []invItem    `json:"vlans"`
-	Devices  []invDevice  `json:"devices"`
-	Services []invService `json:"services"`
+	VLANs       []invItem    `json:"vlans"`
+	Devices     []invDevice  `json:"devices"`
+	Services    []invService `json:"services"`
+	Connections []invConn    `json:"connections"`
 }
 
 type topoEditPage struct {
@@ -358,24 +409,28 @@ func toInt(v any) int64 {
 }
 
 func (s *Server) inventory() (topoInventory, error) {
-	inv := topoInventory{VLANs: []invItem{}, Devices: []invDevice{}, Services: []invService{}}
+	inv := topoInventory{VLANs: []invItem{}, Devices: []invDevice{}, Services: []invService{}, Connections: []invConn{}}
 
-	rows, err := queryAll(s.db, "SELECT id, 'VLAN ' || number || ' - ' || name FROM vlans ORDER BY number")
+	rows, err := queryAll(s.db, "SELECT id, 'VLAN ' || number || ' - ' || name, number FROM vlans ORDER BY number")
 	if err != nil {
 		return inv, err
 	}
 	for _, r := range rows {
-		inv.VLANs = append(inv.VLANs, invItem{ID: toInt(r[0]), Label: str(r[1])})
+		inv.VLANs = append(inv.VLANs, invItem{ID: toInt(r[0]), Label: str(r[1]), Num: toInt(r[2])})
 	}
 
-	rows, err = queryAll(s.db, "SELECT id, name FROM devices ORDER BY name")
+	rows, err = queryAll(s.db, "SELECT id, name, type FROM devices ORDER BY name")
 	if err != nil {
 		return inv, err
 	}
 	devIdx := map[int64]int{}
 	for _, r := range rows {
+		kind, ok := deviceTopoKind[str(r[2])]
+		if !ok {
+			kind = "server"
+		}
 		devIdx[toInt(r[0])] = len(inv.Devices)
-		inv.Devices = append(inv.Devices, invDevice{ID: toInt(r[0]), Label: str(r[1]), VLANs: []int64{}})
+		inv.Devices = append(inv.Devices, invDevice{ID: toInt(r[0]), Label: str(r[1]), Kind: kind, VLANs: []int64{}})
 	}
 	rows, err = queryAll(s.db, "SELECT device_id, vlan_id FROM device_vlans ORDER BY device_id, vlan_id")
 	if err != nil {
@@ -394,6 +449,27 @@ func (s *Server) inventory() (topoInventory, error) {
 	for _, r := range rows {
 		inv.Services = append(inv.Services, invService{ID: toInt(r[0]), Label: str(r[1]), Host: toInt(r[2]), VLAN: toInt(r[3])})
 	}
+
+	rows, err = queryAll(s.db, "SELECT id, device_id, switch_id, mode, COALESCE(untagged_vlan_id, 0) FROM connections ORDER BY id")
+	if err != nil {
+		return inv, err
+	}
+	connIdx := map[int64]int{}
+	for _, r := range rows {
+		connIdx[toInt(r[0])] = len(inv.Connections)
+		inv.Connections = append(inv.Connections, invConn{
+			Device: toInt(r[1]), Switch: toInt(r[2]), Mode: str(r[3]), Untagged: toInt(r[4]), Tagged: []int64{},
+		})
+	}
+	rows, err = queryAll(s.db, "SELECT connection_id, vlan_id FROM connection_vlans ORDER BY connection_id, vlan_id")
+	if err != nil {
+		return inv, err
+	}
+	for _, r := range rows {
+		if i, ok := connIdx[toInt(r[0])]; ok {
+			inv.Connections[i].Tagged = append(inv.Connections[i].Tagged, toInt(r[1]))
+		}
+	}
 	return inv, nil
 }
 
@@ -411,6 +487,17 @@ func (s *Server) renderTopoList(w http.ResponseWriter, errMsg string) {
 }
 
 func (s *Server) mountTopology(r chi.Router) {
+	// Lets the open editor pick up inventory changes (e.g. a connection just
+	// recorded in another tab) without a reload.
+	r.Get("/inventory.json", func(w http.ResponseWriter, _ *http.Request) {
+		inv, err := s.inventory()
+		if err != nil {
+			s.fail(w, "inventory", err)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, inv)
+	})
 	r.Get("/topologies", func(w http.ResponseWriter, _ *http.Request) { s.renderTopoList(w, "") })
 	r.Post("/topologies", s.topoCreate)
 	r.Get("/topologies/{id}", s.topoEdit)

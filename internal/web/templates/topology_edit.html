@@ -41,12 +41,27 @@
     <button type="button" id="btn-share" class="secondary outline">Share…</button>
     <span id="status" role="status"></span>
   </div>
+  <p id="sync-note" hidden><small></small></p>
 
   <div class="props" id="props">
     <span id="props-none"><small>Click a node or link to edit it. Drag nodes to move them.</small></span>
     <label id="prop-label-wrap" hidden>Label
       <input type="text" id="prop-label" maxlength="80">
     </label>
+    <label id="prop-style-wrap" hidden>Line type
+      <select id="prop-style">
+        <option value="">Plain</option>
+        <option value="access">Access (one VLAN)</option>
+        <option value="trunk">Trunk (tagged VLANs)</option>
+      </select>
+    </label>
+    <label id="prop-ref-wrap" hidden>Inventory device
+      <select id="prop-ref"></select>
+    </label>
+    <div id="prop-conn" hidden>
+      <small id="prop-conn-msg"></small>
+      <a id="prop-conn-link" role="button" class="secondary outline" target="_blank" rel="noopener" hidden></a>
+    </div>
     <label id="prop-kind-wrap" hidden>Type
       <select id="prop-kind">{{range .Kinds}}<option value="{{.Key}}">{{.Label}}</option>{{end}}</select>
     </label>

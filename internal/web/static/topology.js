@@ -8,6 +8,12 @@
 
   var NS = "http://www.w3.org/2000/svg";
   var W = 2000, H = 1200, NODE_H = 56, GRID = 10, MAX_LABEL = 80;
+  // Same values as topoLinkStyle in topology.go.
+  var LINK_STYLES = {
+    "": { color: "#64748b", width: 2 },
+    access: { color: "#15803d", width: 2 },
+    trunk: { color: "#7c3aed", width: 4 },
+  };
   var topoId = root.dataset.id;
 
   function $(id) { return document.getElementById(id); }
@@ -78,6 +84,7 @@
     svg.appendChild(defs);
     svg.appendChild(el("rect", { x: 0, y: 0, width: W, height: H, fill: "url(#grid)", "data-bg": 1 }));
 
+    var labels = [];
     links.forEach(function (l) {
       var a = byId(nodes, l.from), b = byId(nodes, l.to);
       if (!a || !b) return;
@@ -85,13 +92,10 @@
       var x1 = a.x + nodeW(a) / 2, y1 = a.y + NODE_H / 2;
       var x2 = b.x + nodeW(b) / 2, y2 = b.y + NODE_H / 2;
       var g = el("g", { "data-link": l.id, "class": "link" });
-      g.appendChild(el("line", { x1: x1, y1: y1, x2: x2, y2: y2, stroke: sel ? "#2563eb" : "#64748b", "stroke-width": sel ? 4 : 2 }));
+      var ls = LINK_STYLES[l.style] || LINK_STYLES[""];
+      g.appendChild(el("line", { x1: x1, y1: y1, x2: x2, y2: y2, stroke: sel ? "#2563eb" : ls.color, "stroke-width": sel ? ls.width + 2 : ls.width }));
       g.appendChild(el("line", { x1: x1, y1: y1, x2: x2, y2: y2, stroke: "transparent", "stroke-width": 14 }));
-      if (l.label) {
-        var mx = (x1 + x2) / 2, my = (y1 + y2) / 2, w = l.label.length * 7 + 12;
-        g.appendChild(el("rect", { x: mx - w / 2, y: my - 10, width: w, height: 20, rx: 4, fill: "#fff", stroke: "#cbd5e1" }));
-        g.appendChild(el("text", { x: mx, y: my + 4, "font-size": 12, "text-anchor": "middle", fill: "#334155" }, l.label));
-      }
+      if (l.label) labels.push({ id: l.id, text: l.label, x: (x1 + x2) / 2, y: (y1 + y2) / 2 });
       svg.appendChild(g);
     });
 
@@ -108,6 +112,16 @@
       g.appendChild(el("text", { x: n.x + w / 2, y: n.y + 40, "font-size": 14, "font-weight": 700, "text-anchor": "middle", fill: "#0f172a" }, n.label));
       svg.appendChild(g);
     });
+
+    // Link labels last so nodes never cover them (clicking one selects the link).
+    labels.forEach(function (lb) {
+      var w = lb.text.length * 7 + 12;
+      var g = el("g", { "data-link": lb.id, "class": "link" });
+      g.appendChild(el("rect", { x: lb.x - w / 2, y: lb.y - 10, width: w, height: 20, rx: 4, fill: "#fff", stroke: "#cbd5e1" }));
+      g.appendChild(el("text", { x: lb.x, y: lb.y + 4, "font-size": 12, "text-anchor": "middle", fill: "#334155" }, lb.text));
+      svg.appendChild(g);
+    });
+    updateSyncNote();
   }
 
   function syncProps() {
@@ -116,9 +130,19 @@
     $("props-none").hidden = !!item;
     $("prop-label-wrap").hidden = !item;
     $("prop-kind-wrap").hidden = !(item && selected.type === "node");
+    $("prop-style-wrap").hidden = !(item && selected.type === "link");
+    var isNode = !!item && selected.type === "node";
+    var isLink = !!item && selected.type === "link";
+    // Only device-like nodes can be tied to an inventory device (VLAN/service nodes keep their own refs).
+    var refOK = isNode && (!item.ref || item.ref.type === "devices");
+    $("prop-ref-wrap").hidden = !refOK;
+    $("prop-conn").hidden = !isLink;
     if (item) {
       $("prop-label").value = item.label;
-      if (selected.type === "node") $("prop-kind").value = item.kind;
+      if (isNode) $("prop-kind").value = item.kind;
+      else $("prop-style").value = item.style || "";
+      if (refOK) $("prop-ref").value = item.ref ? String(item.ref.id) : "";
+      if (isLink) syncConnPanel(item);
     }
   }
 
@@ -234,7 +258,7 @@
     for (;;) {
       var x = 40;
       nodes.forEach(function (n) {
-        if (Math.abs(n.y - y) < 1) x = Math.max(x, n.x + nodeW(n) + 40);
+        if (Math.abs(n.y - y) < 1) x = Math.max(x, n.x + nodeW(n) + 100);
       });
       if (x + w <= W - 40 || y + NODE_H + 40 > H - NODE_H) return { x: Math.min(x, W - w), y: y };
       y += 100;
@@ -299,14 +323,35 @@
     render();
   });
 
+  $("prop-style").addEventListener("change", function () {
+    if (!selected || selected.type !== "link") return;
+    var l = byId(links, selected.id);
+    if (!l) return;
+    if (this.value) l.style = this.value; else delete l.style;
+    setDirty(true);
+    syncProps(); // the "Record as connection" link carries the mode
+    render();
+  });
+
   nameInput.addEventListener("input", function () { setDirty(true); });
 
   // ---- inventory ----------------------------------------------------------
-  var INV_ROWS = { vlans: 60, devices: 220, services: 380 };
+  // Rows: VLANs on top, then network gear (so links to switches/routers run
+  // between rows instead of behind other nodes), then compute devices, then services.
+  var INV_ROWS = { vlans: 60, network: 220, devices: 380, services: 540 };
+  var NETWORK_KINDS = { router: 1, firewall: 1, switch: 1, ap: 1 };
+  function invRow(type, item) {
+    if (type === "devices" && NETWORK_KINDS[item.kind]) return INV_ROWS.network;
+    return INV_ROWS[type];
+  }
   var INV_KIND = { vlans: "vlan", devices: "server", services: "service" };
 
-  (function fillInventory() {
+  function fillInventory() {
     var sel = $("inv-select");
+    sel.innerHTML = "";
+    sel.disabled = false;
+    $("btn-inv-add").disabled = false;
+    $("btn-inv-all").disabled = false;
     function group(label, type, items) {
       if (!items.length) return;
       var og = document.createElement("optgroup");
@@ -330,11 +375,111 @@
       $("btn-inv-add").disabled = true;
       $("btn-inv-all").disabled = true;
     }
-  })();
+  }
+  fillInventory();
+
+  // ---- linking diagram devices to Connections records ---------------------
+  // A diagram link is just a line. To become a Connections record it needs a
+  // mode, VLANs and ports, so the editor sends the user to the pre-filled
+  // Connections form instead of guessing.
+  var NET_RANK = { switch: 3, router: 2, firewall: 2, ap: 1 };
+
+  function deviceRef(n) { return n && n.ref && n.ref.type === "devices" ? n.ref.id : 0; }
+
+  // Which end is the device and which the switch/router, or null when either
+  // end is not tied to an inventory device.
+  function linkSides(l) {
+    var a = byId(nodes, l.from), b = byId(nodes, l.to);
+    var da = deviceRef(a), db = deviceRef(b);
+    if (!da || !db || da === db) return null;
+    var swIsB = (NET_RANK[b.kind] || 0) >= (NET_RANK[a.kind] || 0);
+    return swIsB ? { device: da, sw: db } : { device: db, sw: da };
+  }
+
+  function isRecorded(s) {
+    return inventory.connections.some(function (c) {
+      return (c.device === s.device && c.switch === s.sw) || (c.device === s.sw && c.switch === s.device);
+    });
+  }
+
+  function syncConnPanel(l) {
+    var msg = $("prop-conn-msg"), a = $("prop-conn-link");
+    var s = linkSides(l);
+    a.hidden = true;
+    if (!s) {
+      msg.textContent = "To record this link as a connection, both ends must be inventory devices: select a node and choose its inventory device.";
+      return;
+    }
+    if (isRecorded(s)) {
+      msg.textContent = "Recorded in Connections.";
+      a.href = "/connections";
+      a.textContent = "View connections";
+      a.hidden = false;
+      return;
+    }
+    var q = "device_id=" + s.device + "&switch_id=" + s.sw;
+    if (l.style === "trunk") q += "&mode=Trunk"; else if (l.style === "access") q += "&mode=Access";
+    msg.textContent = "Not recorded in Connections yet.";
+    a.href = "/connections/new?" + q;
+    a.textContent = "Record as connection";
+    a.hidden = false;
+  }
+
+  function updateSyncNote() {
+    var n = links.filter(function (l) { var s = linkSides(l); return s && !isRecorded(s); }).length;
+    var note = $("sync-note");
+    note.hidden = !n;
+    if (n) {
+      note.firstElementChild.textContent = n + (n === 1 ? " link between inventory devices is" : " links between inventory devices are") +
+        " not recorded in Connections yet. Click a link, then “Record as connection”.";
+    }
+  }
+
+  function fillDeviceSelect() {
+    var sel = $("prop-ref");
+    sel.innerHTML = "";
+    var none = document.createElement("option");
+    none.value = "";
+    none.textContent = "— none —";
+    sel.appendChild(none);
+    inventory.devices.forEach(function (d) {
+      var o = document.createElement("option");
+      o.value = String(d.id);
+      o.textContent = d.label;
+      sel.appendChild(o);
+    });
+  }
+
+  $("prop-ref").addEventListener("change", function () {
+    if (!selected || selected.type !== "node") return;
+    var n = byId(nodes, selected.id);
+    if (!n) return;
+    if (this.value) n.ref = { type: "devices", id: Number(this.value) }; else delete n.ref;
+    setDirty(true);
+    syncProps();
+    render();
+  });
+
+  // Pick up inventory changes (e.g. a connection recorded in another tab).
+  function refreshInventory() {
+    fetch("/inventory.json", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (inv) {
+        if (!inv) return;
+        inventory = inv;
+        fillInventory();
+        fillDeviceSelect();
+        syncProps();
+        render();
+      })
+      .catch(function () {});
+  }
+  window.addEventListener("focus", refreshInventory);
 
   function addInventoryNode(type, item) {
     if (hasRef(type, item.id)) return null;
-    return addNode(INV_KIND[type], item.label, { type: type, id: item.id }, INV_ROWS[type]);
+    // Devices carry their own node type (switch, router, firewall, ...).
+    return addNode(item.kind || INV_KIND[type], item.label, { type: type, id: item.id }, invRow(type, item));
   }
 
   // Links devices to their VLANs and services to their host (or VLAN), for
@@ -357,6 +502,44 @@
       if (s.host && findRef("devices", s.host)) connect(sn, findRef("devices", s.host));
       else if (s.vlan) connect(sn, findRef("vlans", s.vlan));
     });
+
+    // Device-to-switch connections become one link per device/switch pair,
+    // labeled "Trunk: 10,30 (native 1)" or "Access: 10" and colored by mode.
+    // Several cables between the same pair share a link with combined labels.
+    var pairs = {};
+    inventory.connections.forEach(function (c) {
+      var k = c.device + ":" + c.switch;
+      (pairs[k] = pairs[k] || []).push(c);
+    });
+    Object.keys(pairs).forEach(function (k) {
+      var cs = pairs[k];
+      var a = findRef("devices", cs[0].device), b = findRef("devices", cs[0].switch);
+      if (!a || !b) return;
+      var label = cs.map(connLabel).join(" / ").slice(0, MAX_LABEL);
+      var style = cs.some(function (c) { return c.mode === "Trunk"; }) ? "trunk" : "access";
+      var existing = links.filter(function (l) {
+        return (l.from === a.id && l.to === b.id) || (l.from === b.id && l.to === a.id);
+      })[0];
+      if (existing) {
+        // Never overwrite a label the user already set.
+        if (!existing.label) { existing.label = label; existing.style = style; setDirty(true); }
+      } else {
+        var l = addLink(a.id, b.id);
+        if (l) { l.label = label; l.style = style; }
+      }
+    });
+  }
+
+  function vlanNum(id) {
+    var v = inventory.vlans.filter(function (x) { return x.id === id; })[0];
+    return v ? v.num : id;
+  }
+  function connLabel(c) {
+    if (c.mode === "Trunk") {
+      var s = "Trunk: " + c.tagged.map(vlanNum).join(",");
+      return c.untagged ? s + " (native " + vlanNum(c.untagged) + ")" : s;
+    }
+    return "Access: " + (c.untagged ? vlanNum(c.untagged) : "?");
   }
 
   $("btn-inv-add").addEventListener("click", function () {
@@ -463,6 +646,7 @@
     else window.__topoDirty = false;
   });
 
+  fillDeviceSelect();
   syncProps();
   render();
 })();
