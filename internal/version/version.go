@@ -5,7 +5,7 @@ package version
 
 import "strings"
 
-var Version = "1.5.1"
+var Version = "1.6.3"
 
 // String returns Version without a leading "v", so release tags such as
 // "v0.2.0" and plain "0.2.0" display the same.

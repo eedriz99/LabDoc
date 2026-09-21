@@ -9,6 +9,7 @@
   --pico-primary-hover-background: #1d4ed8;
   --pico-primary-border: #2563eb;
   --pico-primary-hover-border: #1d4ed8;
+  --app-text: var(--pico-color);
   --pico-border-radius: .5rem;
   --pico-form-element-spacing-vertical: .6rem;
   --pico-form-element-spacing-horizontal: .85rem;
@@ -48,6 +49,16 @@ body > header {
            color: var(--pico-muted-color); text-decoration: none; transition: background .12s, color .12s; }
 .navlink:hover { background: var(--pico-secondary-background, rgba(127,127,127,.15)); background: color-mix(in srgb, var(--pico-color) 8%, transparent); color: var(--pico-color); }
 .navlink[aria-current="page"] { color: var(--pico-primary-background); background: color-mix(in srgb, var(--pico-primary-background) 12%, transparent); }
+
+/* ---- Button variants (the vendored Pico build has no .secondary/.outline) ---- */
+button.outline, a[role="button"].outline {
+  background-color: transparent; color: var(--app-text); border: 1px solid var(--pico-muted-border-color);
+}
+button.outline:hover:not(:disabled), a[role="button"].outline:hover {
+  background-color: color-mix(in srgb, var(--pico-primary-background) 10%, transparent);
+  border-color: var(--pico-primary-background); color: var(--pico-primary-background);
+}
+button:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ---- Icons and icon buttons ---- */
 .icon { width: 1.1em; height: 1.1em; flex: none; stroke: currentColor; fill: none; stroke-width: 2;
