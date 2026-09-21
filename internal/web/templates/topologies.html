@@ -1,0 +1,36 @@
+{{template "head" .}}
+<div class="page-head"><h2>Topology</h2></div>
+<p class="lead">Design network diagrams, then download them as SVG or PNG or share a read-only link.</p>
+{{if .Error}}<p role="alert"><mark>{{.Error}}</mark></p>{{end}}
+<form method="post" action="/topologies" hx-boost="false">
+  <fieldset role="group">
+    <input type="text" name="name" placeholder="New diagram name" maxlength="80" required>
+    <button type="submit" class="btn-icon">{{template "i-plus"}}Create</button>
+  </fieldset>
+</form>
+{{if .Items}}
+<div class="card overflow-auto">
+<table>
+  <thead><tr><th>Name</th><th>Updated (UTC)</th><th>Shared</th><th></th></tr></thead>
+  <tbody>
+  {{range .Items}}
+    <tr>
+      <td><a href="/topologies/{{.ID}}" hx-boost="false">{{.Name}}</a></td>
+      <td>{{.Updated}}</td>
+      <td>{{if .Shared}}yes{{else}}no{{end}}</td>
+      <td>
+        <a href="/topologies/{{.ID}}" hx-boost="false">Edit</a> ·
+        <a href="/topologies/{{.ID}}/image.svg?download=1" hx-boost="false">SVG</a> ·
+        <a href="#" hx-post="/topologies/{{.ID}}/delete"
+           hx-confirm="Delete this diagram? Any share link stops working."
+           hx-target="closest tr" hx-swap="outerHTML">Delete</a>
+      </td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<div class="empty"><p>No diagrams yet.</p></div>
+{{end}}
+{{template "foot" .}}

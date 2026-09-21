@@ -1,22 +1,26 @@
 {{template "head" .}}
-<h2>{{.Entity.Plural}}</h2>
-<p><a role="button" href="/{{.Entity.Key}}/new">Add {{.Entity.Singular}}</a></p>
+<div class="page-head">
+  <h2>{{.Entity.Plural}}<span class="count">{{len .Rows}}</span></h2>
+  <a role="button" class="btn-icon" href="/{{.Entity.Key}}/new">{{template "i-plus"}}Add {{.Entity.Singular}}</a>
+</div>
 {{if .Rows}}
-<div class="overflow-auto">
+<div class="card overflow-auto">
 <table>
   <thead>
-    <tr>{{range .Cols}}<th>{{.Label}}</th>{{end}}<th></th></tr>
+    <tr>{{range .Cols}}<th>{{.Header}}</th>{{end}}<th><span class="visually-hidden">Actions</span></th></tr>
   </thead>
   <tbody>
   {{range .Rows}}
     <tr>
-      {{range .Cells}}<td>{{.}}</td>{{end}}
+      {{range .Cells}}<td>{{if .Tags}}{{range .Tags}}<span class="tag tag-{{.Class}}">{{.Text}}</span> {{end}}{{else}}{{.Text}}{{end}}</td>{{end}}
       <td>
-        <a href="/{{$.Entity.Key}}/{{.ID}}/edit">Edit</a> ·
-        <a href="/{{$.Entity.Key}}/{{.ID}}/history">History</a> ·
-        <a href="#" hx-post="/{{$.Entity.Key}}/{{.ID}}/delete"
-           hx-confirm="Delete this {{$.Entity.Singular}}?"
-           hx-target="closest tr" hx-swap="outerHTML">Delete</a>
+        <span class="row-actions">
+          <a class="icon-btn" href="/{{$.Entity.Key}}/{{.ID}}/edit" title="Edit" aria-label="Edit">{{template "i-edit"}}</a>
+          <a class="icon-btn" href="/{{$.Entity.Key}}/{{.ID}}/history" title="History" aria-label="History">{{template "i-history"}}</a>
+          <a class="icon-btn danger" href="#" title="Delete" aria-label="Delete" hx-post="/{{$.Entity.Key}}/{{.ID}}/delete"
+             hx-confirm="Delete this {{$.Entity.Singular}}?"
+             hx-target="closest tr" hx-swap="outerHTML">{{template "i-trash"}}</a>
+        </span>
       </td>
     </tr>
   {{end}}
@@ -24,6 +28,9 @@
 </table>
 </div>
 {{else}}
-<p>No {{.Entity.Plural}} yet.</p>
+<div class="empty">
+  <p>No {{.Entity.Plural}} yet.</p>
+  <a role="button" class="btn-icon" href="/{{.Entity.Key}}/new">{{template "i-plus"}}Add {{.Entity.Singular}}</a>
+</div>
 {{end}}
 {{template "foot" .}}

@@ -54,6 +54,7 @@ func (s *Server) Routes() http.Handler {
 	for _, e := range entities {
 		s.mountCRUD(r, e)
 	}
+	s.mountTopology(r)
 	return r
 }
 

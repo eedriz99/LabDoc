@@ -1,7 +1,8 @@
 {{template "head" .}}
-<h2>{{.Title}}</h2>
+<a class="back" href="/{{.Entity.Key}}">{{template "i-back"}}{{.Entity.Plural}}</a>
+<div class="page-head"><h2>{{.Title}}</h2></div>
 {{if .Error}}<p role="alert"><mark>{{.Error}}</mark></p>{{end}}
-<form method="post" action="{{.Action}}">
+<form method="post" action="{{.Action}}" class="card form-card">
   {{range .Entity.Fields}}{{$f := .}}
     {{if eq .Kind "textarea"}}
       <label>{{.Label}}
@@ -25,7 +26,7 @@
           {{end}}
         </select>
       </label>
-    {{else if eq .Kind "multi"}}
+    {{else if or (eq .Kind "multi") (eq .Kind "checks")}}
       <fieldset>
         <legend>{{.Label}}</legend>
         {{range index $.Choices .Name}}
@@ -43,7 +44,9 @@
       </label>
     {{end}}
   {{end}}
-  <button type="submit">Save</button>
-  <a href="/{{.Entity.Key}}" role="button" class="secondary outline">Cancel</a>
+  <div class="form-actions">
+    <button type="submit" class="btn-icon">{{template "i-check"}}Save</button>
+    <a href="/{{.Entity.Key}}" role="button" class="secondary outline">Cancel</a>
+  </div>
 </form>
 {{template "foot" .}}

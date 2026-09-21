@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>{{.Name}} · LabDoc</title>
+  <link rel="stylesheet" href="/static/pico.min.css">
+  <style>
+    .frame { background: #fff; border-radius: .5rem; padding: .5rem; overflow: auto; }
+    .frame img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+    .actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1rem; }
+    .actions > * { margin: 0; width: auto; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>{{.Name}}</h1>
+    <div class="frame"><img src="/share/{{.Token}}/image.svg" alt="Network diagram: {{.Name}}"></div>
+    <div class="actions">
+      <a role="button" class="secondary outline" href="/share/{{.Token}}/image.svg?download=1">Download SVG</a>
+      <button type="button" id="btn-png" class="secondary outline"
+              data-src="/share/{{.Token}}/image.svg" data-name="{{.Slug}}.png">Download PNG</button>
+      <small id="png-status" role="status"></small>
+    </div>
+    <footer><small>Shared read-only from LabDoc.</small></footer>
+  </main>
+  <script src="/static/topology-export.js"></script>
+  <script>
+    document.getElementById("btn-png").addEventListener("click", function (ev) {
+      var b = ev.currentTarget, st = document.getElementById("png-status");
+      st.textContent = "Rendering…";
+      window.LabDocExport.png(b.dataset.src, b.dataset.name)
+        .then(function () { st.textContent = ""; })
+        .catch(function (e) { st.textContent = "Could not create PNG: " + e.message; });
+    });
+  </script>
+</body>
+</html>
