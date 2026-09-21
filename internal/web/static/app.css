@@ -1,0 +1,163 @@
+/* LabDoc theme, layered over Pico. Colors come from Pico variables so both themes work. */
+:root {
+  --app-max: 1760px;
+  --app-radius: .75rem;
+  --app-gutter: clamp(1rem, .4rem + 2.2vw, 3rem);
+  /* Fluid base size: every rem below scales smoothly with the window. */
+  --pico-font-size: clamp(.94rem, .78rem + .32vw, 1.2rem);
+  --pico-primary-background: #2563eb;
+  --pico-primary-hover-background: #1d4ed8;
+  --pico-primary-border: #2563eb;
+  --pico-primary-hover-border: #1d4ed8;
+  --app-text: var(--pico-color);
+  --pico-border-radius: .5rem;
+  --pico-form-element-spacing-vertical: .6rem;
+  --pico-form-element-spacing-horizontal: .85rem;
+}
+
+/* ---- Layout: centered column, tighter vertical rhythm ---- */
+body > main, body > footer {
+  width: 100%;
+  max-width: var(--app-max);
+  margin: 0 auto;
+  padding: 1.5rem var(--app-gutter);
+}
+body > main { padding-bottom: 2rem; min-height: 60vh; }
+body > footer { padding-top: 1rem; color: var(--pico-muted-color); text-align: center; }
+
+/* ---- Top bar ---- */
+body > header {
+  position: sticky; top: 0; z-index: 20;
+  max-width: none; /* Pico caps body > header at 950/1200px; the .topbar sets its own width */
+  padding: 0;
+  background: color-mix(in srgb, var(--pico-background-color) 88%, transparent);
+  backdrop-filter: saturate(160%) blur(10px);
+  border-bottom: 1px solid var(--pico-muted-border-color);
+}
+.topbar {
+  width: 100%; box-sizing: border-box; max-width: var(--app-max); margin: 0 auto; padding: .6rem var(--app-gutter);
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 1rem;
+}
+.topbar .brand { justify-self: start; }
+.topbar #theme-toggle { justify-self: end; }
+.navlinks { flex-wrap: nowrap; min-width: 0; margin: 0; padding: 0; list-style: none; display: flex; align-items: center; justify-content: center; gap: clamp(.2rem, .6vw, .7rem); }
+.navlinks li { margin: 0; padding: 0; list-style: none; }
+.brand { display: inline-flex; align-items: center; gap: .55rem; font-weight: 700; font-size: clamp(1.05rem, .9rem + .35vw, 1.4rem);
+         letter-spacing: -.01em; color: var(--pico-color); text-decoration: none; }
+.brand svg { width: 1.6rem; height: 1.6rem; color: var(--pico-primary-background); }
+.navlink { white-space: nowrap; display: inline-flex; align-items: center; gap: .4em; padding: .45em .8em; border-radius: .5rem; font-size: clamp(.84rem, .62rem + .42vw, 1.02rem); font-weight: 500;
+           color: var(--pico-muted-color); text-decoration: none; transition: background .12s, color .12s; }
+.navlink:hover { background: var(--pico-secondary-background, rgba(127,127,127,.15)); background: color-mix(in srgb, var(--pico-color) 8%, transparent); color: var(--pico-color); }
+.navlink[aria-current="page"] { color: var(--pico-primary-background); background: color-mix(in srgb, var(--pico-primary-background) 12%, transparent); }
+
+/* ---- Button variants (the vendored Pico build has no .secondary/.outline) ---- */
+button.outline, a[role="button"].outline {
+  background-color: transparent; color: var(--app-text); border: 1px solid var(--pico-muted-border-color);
+}
+button.outline:hover:not(:disabled), a[role="button"].outline:hover {
+  background-color: color-mix(in srgb, var(--pico-primary-background) 10%, transparent);
+  border-color: var(--pico-primary-background); color: var(--pico-primary-background);
+}
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- Icons and icon buttons ---- */
+.icon { width: 1.1em; height: 1.1em; flex: none; stroke: currentColor; fill: none; stroke-width: 2;
+        stroke-linecap: round; stroke-linejoin: round; vertical-align: -.15em; }
+.btn-icon { white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: .45rem; width: auto; margin: 0; }
+#theme-toggle { width: 2.25rem; height: 2.25rem; padding: 0; border-radius: 999px; }
+#theme-toggle .icon { width: 1.1rem; height: 1.1rem; }
+:root:not([data-theme]) #theme-toggle .to-light { display: none; }
+[data-theme="dark"] #theme-toggle .to-dark, [data-theme="light"] #theme-toggle .to-light { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) #theme-toggle .to-dark { display: none; }
+  :root:not([data-theme]) #theme-toggle .to-light { display: inline; }
+}
+
+/* ---- Page header ---- */
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.page-head h1, .page-head h2 { margin: 0; font-size: clamp(1.4rem, 1.1rem + .8vw, 2rem); letter-spacing: -.02em; }
+.page-head .count { margin-left: .6rem; padding: .1rem .55rem; border-radius: 999px; font-size: .8rem; font-weight: 600;
+                    color: var(--pico-muted-color); background: color-mix(in srgb, var(--pico-color) 9%, transparent); vertical-align: middle; }
+.lead { color: var(--pico-muted-color); margin: -.5rem 0 1.25rem; }
+.back { display: inline-flex; align-items: center; gap: .3rem; margin-bottom: .75rem; font-size: .92rem; text-decoration: none; }
+
+/* ---- Cards and tables ---- */
+.card { background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color);
+        border-radius: var(--app-radius); box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 14px rgba(0,0,0,.03); overflow: hidden; }
+.card > table { margin: 0; }
+table { --pico-spacing: .75rem; }
+th, td { padding: .7rem 1rem; }
+thead th { font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; color: var(--pico-muted-color);
+           background: color-mix(in srgb, var(--pico-color) 4%, transparent); white-space: nowrap; }
+tbody tr:hover td { background: color-mix(in srgb, var(--pico-primary-background) 5%, transparent); }
+tbody tr:last-child td { border-bottom: 0; }
+td:last-child, th:last-child { text-align: right; }
+.row-actions { display: inline-flex; gap: .15rem; justify-content: flex-end; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: .5rem;
+            color: var(--pico-muted-color); text-decoration: none; transition: background .12s, color .12s; }
+.icon-btn:hover { color: var(--pico-primary-background); background: color-mix(in srgb, var(--pico-primary-background) 12%, transparent); }
+.icon-btn.danger:hover { color: #dc2626; background: rgba(220,38,38,.12); }
+.icon-btn .icon { width: 1.05rem; height: 1.05rem; }
+.overflow-auto { margin: 0; }
+
+.empty { text-align: center; padding: 3rem 1rem; border: 1px dashed var(--pico-muted-border-color); border-radius: var(--app-radius);
+         color: var(--pico-muted-color); }
+.empty p { margin: 0 0 1rem; }
+
+/* ---- Dashboard tiles ---- */
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }  /* six sections: 3x2, or one row when wide */
+@media (min-width: 1600px) { .tiles { grid-template-columns: repeat(6, 1fr); } }
+@media (max-width: 700px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 460px) { .tiles { grid-template-columns: 1fr; } }
+.tile { padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: .35rem; }
+.tile-name { font-weight: 600; text-decoration: none; color: var(--pico-color); }
+.tile-name:hover { color: var(--pico-primary-background); }
+.tile-count { font-size: clamp(2rem, 1.5rem + 1vw, 2.75rem); font-weight: 700; letter-spacing: -.03em; line-height: 1.1; }
+.tile-foot { margin-top: .5rem; }
+
+/* ---- Forms ---- */
+.form-card { max-width: 860px; padding: 1.5rem; overflow: visible; }
+.form-card label, .form-card fieldset { margin-bottom: 1rem; }
+.form-card fieldset label { display: inline-flex; margin: 0 1.25rem .4rem 0; }
+.form-actions { display: flex; gap: .6rem; align-items: center; margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--pico-muted-border-color); }
+.form-actions > * { margin: 0; width: auto; }
+
+/* Pico gives buttons full width in some contexts; keep inline buttons compact. */
+a[role="button"], button { margin-bottom: 0; }
+[role="group"] { margin-bottom: 1.25rem; }
+
+/* ---- History entries ---- */
+main article { border-radius: var(--app-radius); margin: 0 0 1rem; box-shadow: none; border: 1px solid var(--pico-muted-border-color); }
+main article > header { padding: .7rem 1.1rem; margin: 0; }
+main article ul { margin: 0; padding: .6rem 1.1rem .6rem 2.2rem; }
+
+/* ---- Badges ---- */
+.tag { display: inline-block; padding: .05rem .55rem; border-radius: 999px; font-size: .76rem; font-weight: 600; color: #fff; background: #475569; }
+.tag-ssd { background: #1d4ed8; }
+.tag-hdd { background: #b45309; }
+.tag-nvme { background: #0f766e; }
+.tag-trunk { background: #7c3aed; }
+.tag-access { background: #15803d; }
+
+/* Once the labelled links can't shrink any further, drop the text and keep icons (still single row). */
+@media (max-width: 1000px) {
+  .navtext { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .navlinks { gap: .3rem; }
+  .navlink { padding: .6em .7em; }
+  .navlink .icon { width: 1.3rem; height: 1.3rem; }
+  .navlinks { overflow-x: auto; scrollbar-width: none; }
+  .navlinks::-webkit-scrollbar { display: none; }
+}
+@media (max-width: 520px) {
+  .brand { font-size: 0; gap: 0; }  /* logo only */
+  .brand .icon { width: 1.6rem; height: 1.6rem; }
+  .navlinks { gap: .1rem; }
+  .navlink { padding: .55em .55em; }
+}
+@media (max-width: 640px) {
+  :root { --app-gutter: 1rem; }
+  th, td { padding: .6rem .7rem; }
+}
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+                   clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

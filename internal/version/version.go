@@ -5,7 +5,11 @@ package version
 
 import "strings"
 
+<<<<<<< Updated upstream
 var Version = "0.3.0"
+=======
+var Version = "1.6.2"
+>>>>>>> Stashed changes
 
 // String returns Version without a leading "v", so release tags such as
 // "v0.2.0" and plain "0.2.0" display the same.
