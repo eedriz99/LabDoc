@@ -16,7 +16,7 @@ func main() {
 	addr := flag.String("addr", envOr("LABDOC_ADDR", ":8080"), "listen address")
 	dbPath := flag.String("db", envOr("LABDOC_DB", "homelab.db"), "SQLite database path")
 	backup := flag.String("backup", "", "write a consistent copy of the database to this path and exit")
-	showVersion :=flag.Bool("version", false, "print version and exit")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
 	if *showVersion {
