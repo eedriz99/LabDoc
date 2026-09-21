@@ -56,6 +56,8 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X labdoc/interna
 
 Test and vet: `CGO_ENABLED=0 go vet ./... && CGO_ENABLED=0 go test ./...`. CI runs the same on every push and pull request.
 
+Pull requests to `main` are also reviewed and merged automatically by `.github/workflows/pr-review-merge.yml`: gofmt, vet, tests, build with a 20 MB binary budget, a check that `internal/version/version.go` was bumped, and golangci-lint. When all pass, the PR is squash-merged and its branch deleted. Draft PRs, fork PRs, and PRs labeled `hold` are never merged. In repository settings, enable "Allow GitHub Actions to create and approve pull requests" and allow squash merging.
+
 ## Deploy
 
 1. Copy the binary to `/usr/local/bin/labdoc` and create a `labdoc` user.

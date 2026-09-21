@@ -299,7 +299,7 @@
   $("btn-link").addEventListener("click", function () {
     linkMode = !linkMode;
     linkFrom = null;
-    this.textContent = "Link mode: " + (linkMode ? "on" : "off");
+    $("link-state").textContent = linkMode ? "on" : "off";
     this.setAttribute("aria-pressed", String(linkMode));
     setStatus(linkMode ? "Click a node, then the node to link it to." : "");
     render();

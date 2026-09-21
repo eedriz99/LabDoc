@@ -1,16 +1,13 @@
 {{template "head" .}}
-<h1>LabDoc</h1>
-<p>Homelab system of record. Every change is versioned automatically.</p>
-<table>
-  <thead><tr><th>Section</th><th>Records</th><th></th></tr></thead>
-  <tbody>
-  {{range .Entries}}
-    <tr>
-      <td><a href="/{{.Entity.Key}}">{{.Entity.Plural}}</a></td>
-      <td>{{.Count}}</td>
-      <td><a href="/{{.Entity.Key}}/new">Add {{.Entity.Singular}}</a></td>
-    </tr>
-  {{end}}
-  </tbody>
-</table>
+<div class="page-head"><h1>LabDoc</h1></div>
+<p class="lead">Homelab system of record. Every change is versioned automatically.</p>
+<div class="tiles">
+{{range .Entries}}
+  <div class="card tile">
+    <a class="tile-name" href="/{{.Entity.Key}}">{{.Entity.Plural}}</a>
+    <span class="tile-count">{{.Count}}</span>
+    <span class="tile-foot"><a role="button" class="btn-icon secondary outline" href="/{{.Entity.Key}}/new">{{template "i-plus"}}Add {{.Entity.Singular}}</a></span>
+  </div>
+{{end}}
+</div>
 {{template "foot" .}}
