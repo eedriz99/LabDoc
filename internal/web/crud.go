@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -25,9 +28,17 @@ type base struct {
 	Nav   []*Entity
 }
 
+// listTag is one highlighted badge (e.g. SSD, HDD) inside a list cell.
+type listTag struct{ Text, Class string }
+
+type listCell struct {
+	Text string
+	Tags []listTag
+}
+
 type listRow struct {
 	ID    int64
-	Cells []string
+	Cells []listCell
 }
 
 type listPage struct {
@@ -174,6 +185,27 @@ func addRevision(tx *sql.Tx, e *Entity, id int64, snap map[string]any, note stri
 func (e *Entity) parse(r *http.Request) ([]any, error) {
 	var args []any
 	for _, f := range e.scalarFields() {
+		if f.Kind == kChecks {
+			picked := map[string]bool{}
+			for _, v := range r.PostForm[f.Name] {
+				if !slices.Contains(f.Options, v) {
+					return nil, fmt.Errorf("%s has an invalid value", f.Label)
+				}
+				picked[v] = true
+			}
+			// Store in option order so the same selection is always the same string.
+			var canon []string
+			for _, o := range f.Options {
+				if picked[o] {
+					canon = append(canon, o)
+				}
+			}
+			if len(canon) == 0 && f.Required {
+				return nil, fmt.Errorf("%s is required", f.Label)
+			}
+			args = append(args, strings.Join(canon, ","))
+			continue
+		}
 		v := strings.TrimSpace(r.PostFormValue(f.Name))
 		if f.Kind == kBool {
 			if v == "1" {
@@ -218,16 +250,21 @@ func (e *Entity) parse(r *http.Request) ([]any, error) {
 	return args, nil
 }
 
-func friendlyErr(err error) string {
+func friendlyErr(e *Entity, err error) string {
 	msg := err.Error()
 	switch {
+	case strings.Contains(msg, "UNIQUE constraint failed: connections."):
+		return "That port is already used by another connection."
 	case strings.Contains(msg, "UNIQUE constraint"):
 		return "That value already exists; it must be unique."
-	case strings.Contains(msg, "CHECK constraint"):
+	case strings.Contains(msg, "CHECK constraint") && e.Key == "ips":
 		return "Invalid combination of values (an IP assignment needs a device or a service)."
-	default:
-		return msg
+	case strings.Contains(msg, "CHECK constraint"):
+		return "Invalid combination of values."
 	}
+	// Validation messages are written lowercase (Go convention); capitalize for display.
+	r, n := utf8.DecodeRuneInString(msg)
+	return string(unicode.ToUpper(r)) + msg[n:]
 }
 
 // write creates (id == 0) or updates a row, its links and its revision in one
@@ -307,6 +344,11 @@ func (s *Server) choices(e *Entity, values map[string]string, multi map[string][
 			for _, o := range f.Options {
 				out[f.Name] = append(out[f.Name], choice{Value: o, Label: o, Selected: values[f.Name] == o})
 			}
+		case kChecks:
+			for _, o := range f.Options {
+				sel := slices.Contains(strings.Split(values[f.Name], ","), o)
+				out[f.Name] = append(out[f.Name], choice{Value: o, Label: o, Selected: sel})
+			}
 		case kRef, kMulti:
 			r := byKey[f.Ref]
 			rows, err := queryAll(s.db, "SELECT id, "+r.LabelSQL+" FROM "+r.Table+" ORDER BY "+r.OrderBy+", id")
@@ -364,16 +406,33 @@ func (s *Server) mountCRUD(r chi.Router, e *Entity) {
 		for _, row := range rows {
 			id, _ := strconv.ParseInt(str(row[0]), 10, 64)
 			lr := listRow{ID: id}
-			for _, c := range row[1:] {
-				lr.Cells = append(lr.Cells, str(c))
+			for i, c := range row[1:] {
+				cell := listCell{Text: str(c)}
+				if (page.Cols[i].Kind == kChecks || page.Cols[i].Badge) && cell.Text != "" {
+					for _, t := range strings.Split(cell.Text, ",") {
+						cell.Tags = append(cell.Tags, listTag{Text: t, Class: strings.ToLower(t)})
+					}
+				}
+				lr.Cells = append(lr.Cells, cell)
 			}
 			page.Rows = append(page.Rows, lr)
 		}
 		s.render(w, "list.html", page)
 	})
 
-	r.Get(base+"/new", func(w http.ResponseWriter, _ *http.Request) {
-		s.renderForm(w, e, 0, map[string]string{}, nil, "")
+	r.Get(base+"/new", func(w http.ResponseWriter, r *http.Request) {
+		values := map[string]string{}
+		for _, f := range e.Fields {
+			if f.Default != "" {
+				values[f.Name] = f.Default
+			}
+			// Allow prefilling single-value fields from the query string, e.g.
+			// /connections/new?device_id=1&switch_id=2&mode=Trunk from the topology editor.
+			if v := r.URL.Query().Get(f.Name); v != "" && f.Kind != kMulti && f.Kind != kChecks {
+				values[f.Name] = v
+			}
+		}
+		s.renderForm(w, e, 0, values, nil, "")
 	})
 
 	r.Get(base+"/{id}/edit", func(w http.ResponseWriter, r *http.Request) {
@@ -420,13 +479,19 @@ func (s *Server) mountCRUD(r chi.Router, e *Entity) {
 		values := map[string]string{}
 		multi := map[string][]string{}
 		for _, f := range e.Fields {
-			if f.Kind == kMulti {
+			switch f.Kind {
+			case kMulti:
 				multi[f.Name] = r.PostForm[f.Name]
-			} else {
+			case kChecks:
+				values[f.Name] = strings.Join(r.PostForm[f.Name], ",")
+			default:
 				values[f.Name] = r.PostFormValue(f.Name)
 			}
 		}
 		args, err := e.parse(r)
+		if err == nil && e.Validate != nil {
+			err = e.Validate(r)
+		}
 		if err == nil {
 			_, err = s.write(e, id, args, multi)
 		}
@@ -436,7 +501,7 @@ func (s *Server) mountCRUD(r chi.Router, e *Entity) {
 		}
 		if err != nil {
 			// 200, not 4xx: htmx does not swap error responses by default.
-			s.renderForm(w, e, id, values, multi, friendlyErr(err))
+			s.renderForm(w, e, id, values, multi, friendlyErr(e, err))
 			return
 		}
 		http.Redirect(w, r, base, http.StatusSeeOther)
