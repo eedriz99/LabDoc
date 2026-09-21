@@ -261,3 +261,249 @@ func TestSlugify(t *testing.T) {
 		}
 	}
 }
+
+// networkDiagram is a small tiered diagram using VLAN tags, a logical service
+// link and an unlabeled trunk.
+func networkDiagram() m {
+	return m{
+		"name": "Net",
+		"vlans": []m{
+			{"num": 30, "name": "Lab Services"},
+			{"num": 10, "name": "Management"},
+		},
+		"nodes": []m{
+			{"id": "n1", "kind": "internet", "label": "Internet", "x": 100, "y": 40},
+			{"id": "n2", "kind": "router", "label": "RTR-2951", "x": 100, "y": 200, "detail": "Cisco 2951 router", "vlans": []int{30, 10}},
+			{"id": "n3", "kind": "hypervisor", "label": "Master", "x": 100, "y": 380},
+			{"id": "n4", "kind": "service", "label": "nginx", "x": 100, "y": 540, "vlans": []int{30}},
+		},
+		"links": []m{
+			{"id": "l1", "from": "n1", "to": "n2"},
+			{"id": "l2", "from": "n2", "to": "n3", "style": "trunk"},
+			{"id": "l3", "from": "n3", "to": "n4"},
+		},
+	}
+}
+
+func TestTopologyVLANTagValidation(t *testing.T) {
+	e := newEnv(t)
+	newTopo(e, "Lab")
+	if code, msg := e.postJSON("/topologies/1/save", networkDiagram()); code != 200 {
+		t.Fatalf("valid tagged diagram = %d %s", code, msg)
+	}
+
+	bad := map[string]func(d m){
+		"tag not in VLAN list": func(d m) { d["nodes"].([]m)[1]["vlans"] = []int{99} },
+		"vlan zero":            func(d m) { d["vlans"] = []m{{"num": 0, "name": "x"}} },
+		"vlan too big":         func(d m) { d["vlans"] = []m{{"num": 4095, "name": "x"}} },
+		"duplicate vlan":       func(d m) { d["vlans"] = []m{{"num": 10, "name": "a"}, {"num": 10, "name": "b"}} },
+		"duplicate tag":        func(d m) { d["nodes"].([]m)[1]["vlans"] = []int{10, 10} },
+		"too many tags": func(d m) {
+			var all []m
+			var tags []int
+			for i := 1; i <= 7; i++ {
+				all = append(all, m{"num": i, "name": "v"})
+				tags = append(tags, i)
+			}
+			d["vlans"] = all
+			d["nodes"].([]m)[1]["vlans"] = tags
+		},
+		"detail too long": func(d m) { d["nodes"].([]m)[1]["detail"] = strings.Repeat("x", 81) },
+	}
+	for name, mut := range bad {
+		d := networkDiagram()
+		mut(d)
+		if code, _ := e.postJSON("/topologies/1/save", d); code != 400 {
+			t.Errorf("%s: save = %d, want 400", name, code)
+		}
+	}
+
+	// The logical link type is accepted.
+	d := networkDiagram()
+	d["links"].([]m)[0]["style"] = "logical"
+	if code, msg := e.postJSON("/topologies/1/save", d); code != 200 {
+		t.Errorf("logical link style = %d %s", code, msg)
+	}
+}
+
+func TestTopologySVGLegendTagsAndLabels(t *testing.T) {
+	e := newEnv(t)
+	newTopo(e, "Lab")
+	if code, msg := e.postJSON("/topologies/1/save", networkDiagram()); code != 200 {
+		t.Fatalf("save = %d %s", code, msg)
+	}
+	_, svg := e.get("/topologies/1/image.svg")
+
+	for name, want := range map[string]string{
+		"role line under the name": ">Cisco 2951 router<",
+		"vlan tag":                 ">VLAN 30<",
+		"legend lines heading":     ">LINES<",
+		"legend vlan heading":      ">VLAN TAGS<",
+		"legend device heading":    ">DEVICE TYPES<",
+		"legend vlan name":         ">Lab Services<",
+		"legend trunk entry":       "Trunk cable: carries several VLANs",
+		"legend logical entry":     "Dashed: a service running on a device, not a cable",
+		"plain link labeled":       ">Link<",
+		"trunk fallback label":     ">Trunk<",
+		"logical links are dashed": `stroke-dasharray="6 5"`,
+		"plain hypervisor label":   "HYPERVISOR NODE",
+	} {
+		if !strings.Contains(svg, want) {
+			t.Errorf("svg missing %s (%q)", name, want)
+		}
+	}
+	if strings.Contains(svg, ">Access cable") {
+		t.Error("legend lists a link type the diagram does not use")
+	}
+
+	// Hiding labels removes every link label but keeps the legend.
+	d := networkDiagram()
+	d["hideLabels"] = true
+	if code, msg := e.postJSON("/topologies/1/save", d); code != 200 {
+		t.Fatalf("save = %d %s", code, msg)
+	}
+	_, svg = e.get("/topologies/1/image.svg")
+	for _, gone := range []string{">Runs on<", ">Trunk<", ">Link<"} {
+		if strings.Contains(svg, gone) {
+			t.Errorf("hideLabels still draws %q", gone)
+		}
+	}
+	if !strings.Contains(svg, "Trunk cable: carries several VLANs") {
+		t.Error("legend should stay when labels are hidden")
+	}
+}
+
+func TestTopologyLinkTypeIsLogicalForServicesAndVLANNodes(t *testing.T) {
+	sw := topoNode{Kind: "switch"}
+	for _, c := range []struct {
+		link     topoLink
+		from, to topoNode
+		want     string
+	}{
+		{topoLink{}, sw, topoNode{Kind: "server"}, "link"},
+		{topoLink{Style: "trunk"}, sw, topoNode{Kind: "server"}, "trunk"},
+		{topoLink{Style: "access"}, sw, topoNode{Kind: "server"}, "access"},
+		{topoLink{Style: "trunk"}, sw, topoNode{Kind: "service"}, "logical"}, // a service is never a cable
+		{topoLink{}, topoNode{Kind: "vlan"}, sw, "logical"},
+		{topoLink{Style: "logical"}, sw, sw, "logical"},
+	} {
+		if got := topoLinkType(c.link, c.from, c.to); got != c.want {
+			t.Errorf("topoLinkType(%+v, %s, %s) = %q, want %q", c.link, c.from.Kind, c.to.Kind, got, c.want)
+		}
+	}
+}
+
+func TestInventoryJSONCarriesRoleAndAccurateKinds(t *testing.T) {
+	e := newEnv(t)
+	e.created("/vlans", url.Values{"number": {"30"}, "name": {"Lab Services"}})
+	d := device("Master", "Hypervisor node")
+	d.Set("role", "Proxmox cluster node")
+	e.created("/devices", d)
+	e.created("/devices", device("Nas1", "NAS"))
+	_, body := e.get("/inventory.json")
+	for _, want := range []string{`"kind":"hypervisor"`, `"detail":"Proxmox cluster node"`, `"kind":"storage"`, `"name":"Lab Services"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("inventory.json missing %s in %s", want, body)
+		}
+	}
+}
+
+func TestTopologyServicesAreDashedLogicalNodes(t *testing.T) {
+	e := newEnv(t)
+	newTopo(e, "Lab")
+	d := m{
+		"name": "Svc",
+		"nodes": []m{
+			{"id": "n1", "kind": "hypervisor", "label": "Master", "x": 40, "y": 40},
+			{"id": "n2", "kind": "service", "label": "nginx", "x": 40, "y": 240},
+			{"id": "n3", "kind": "server", "label": "Plain", "x": 400, "y": 40},
+		},
+		"links": []m{{"id": "l1", "from": "n1", "to": "n2"}},
+	}
+	if code, msg := e.postJSON("/topologies/1/save", d); code != 200 {
+		t.Fatalf("save = %d %s", code, msg)
+	}
+	_, svg := e.get("/topologies/1/image.svg")
+
+	// The service box has a dashed border, the equipment boxes do not.
+	if got := strings.Count(svg, `rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="2" stroke-dasharray="6 4"`); got != 1 {
+		t.Errorf("service border dashed %d times, want 1", got)
+	}
+	if strings.Contains(svg, `stroke="#4338ca" stroke-width="2" stroke-dasharray`) || strings.Contains(svg, `stroke="#2563eb" stroke-width="2" stroke-dasharray`) {
+		t.Error("equipment nodes must keep a solid border")
+	}
+	// Its connector is dashed too, even though the link has no style set. It is
+	// not labeled: the legend explains dashed lines, and 10+ services on one
+	// device would otherwise carry 10+ identical tags.
+	if !strings.Contains(svg, `stroke="#94a3b8" stroke-width="2" stroke-dasharray="6 5"`) {
+		t.Error("link to a service should be a dashed logical connector")
+	}
+	if strings.Contains(svg, ">Runs on<") || strings.Contains(svg, ">Logical<") {
+		t.Error("logical links should not get a default label")
+	}
+	// The legend explains both, and marks the service type with a dashed swatch.
+	for _, want := range []string{"Dashed: a service running on a device, not a cable", ">Service (app)<", `stroke-dasharray="3 2"`} {
+		if !strings.Contains(svg, want) {
+			t.Errorf("legend missing %q", want)
+		}
+	}
+	// A trunk style cannot turn a service link into a cable.
+	d["links"] = []m{{"id": "l1", "from": "n1", "to": "n2", "style": "trunk"}}
+	if code, msg := e.postJSON("/topologies/1/save", d); code != 200 {
+		t.Fatalf("save = %d %s", code, msg)
+	}
+	_, svg = e.get("/topologies/1/image.svg")
+	if strings.Contains(svg, "#7c3aed") {
+		t.Error("a link to a service must never be drawn as a trunk cable")
+	}
+}
+
+func TestTopologyHandlesManyServicesOnOneDevice(t *testing.T) {
+	e := newEnv(t)
+	newTopo(e, "Lab")
+	nodes := []m{{"id": "h", "kind": "hypervisor", "label": "Master", "x": 400, "y": 40}}
+	var links []m
+	for i := 0; i < 14; i++ {
+		id := "s" + strings.Repeat("x", i%3) + string(rune('a'+i))
+		nodes = append(nodes, m{"id": id, "kind": "service", "label": "svc-" + string(rune('a'+i)), "x": 40 + (i%4)*180, "y": 240 + (i/4)*90})
+		links = append(links, m{"id": "l" + id, "from": "h", "to": id})
+	}
+	d := m{"name": "Busy", "nodes": nodes, "links": links}
+	if code, msg := e.postJSON("/topologies/1/save", d); code != 200 {
+		t.Fatalf("14 services on one device = %d %s", code, msg)
+	}
+	_, svg := e.get("/topologies/1/image.svg")
+	if got := strings.Count(svg, `stroke-dasharray="6 5"`); got < 14 {
+		t.Errorf("want 14 dashed connectors, found %d", got)
+	}
+}
+
+func TestTopologyKindsLogicalAndLegacyFlags(t *testing.T) {
+	if !topoKindByKey["service"].Logical || topoKindByKey["service"].Legacy {
+		t.Error("service should be a logical kind that is still offered")
+	}
+	if !topoKindByKey["vlan"].Logical || !topoKindByKey["vlan"].Legacy {
+		t.Error("vlan should be a legacy logical kind")
+	}
+	for _, k := range []string{"router", "switch", "server", "hypervisor", "storage", "internet"} {
+		if topoKindByKey[k].Logical {
+			t.Errorf("%s is equipment, not logical", k)
+		}
+	}
+}
+
+func TestTopologyEditorOffersServicesButNotVLANBoxes(t *testing.T) {
+	e := newEnv(t)
+	newTopo(e, "Lab")
+	_, page := e.get("/topologies/1")
+	sel := page[strings.Index(page, `id="new-kind"`):]
+	sel = sel[:strings.Index(sel, "</select>")]
+	if strings.Contains(sel, `value="vlan"`) {
+		t.Error("Add node should not offer VLAN boxes")
+	}
+	for _, want := range []string{`value="service"`, `value="router"`} {
+		if !strings.Contains(sel, want) {
+			t.Errorf("Add node should offer %s", want)
+		}
+	}
+}

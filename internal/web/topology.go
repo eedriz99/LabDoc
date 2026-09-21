@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -25,21 +26,31 @@ type topoKind struct {
 	Key   string `json:"key"`
 	Label string `json:"label"`
 	Color string `json:"color"`
+	Tier  int    `json:"tier"` // top-to-bottom row for Auto layout: 0 internet ... 4 services
+	// Legacy kinds still render but are not offered for new nodes (VLANs are
+	// tags on devices now, not boxes).
+	Legacy bool `json:"legacy,omitempty"`
+	// Logical kinds are not equipment: they are drawn with a dashed border and
+	// only ever connect with dashed logical links (e.g. a service runs on a device).
+	Logical bool `json:"logical,omitempty"`
 }
 
 // topoKinds is the single source of truth for node types; the editor gets it
-// as JSON and the SVG renderer uses it directly.
+// as JSON and the SVG renderer uses it directly. Labels are plain words so a
+// reader who does not know the gear can still tell what each box is.
 var topoKinds = []topoKind{
-	{"internet", "Internet", "#0284c7"},
-	{"router", "Router", "#ea580c"},
-	{"firewall", "Firewall", "#dc2626"},
-	{"switch", "Switch", "#7c3aed"},
-	{"ap", "Access point", "#0d9488"},
-	{"server", "Server", "#2563eb"},
-	{"service", "Service", "#16a34a"},
-	{"client", "Client", "#475569"},
-	{"vlan", "VLAN", "#a16207"},
-	{"other", "Other", "#334155"},
+	{"internet", "Internet / WAN", "#0284c7", 0, false, false},
+	{"firewall", "Firewall", "#dc2626", 1, false, false},
+	{"router", "Router", "#ea580c", 1, false, false},
+	{"switch", "Switch", "#7c3aed", 2, false, false},
+	{"ap", "Access point", "#0d9488", 3, false, false},
+	{"hypervisor", "Hypervisor node", "#4338ca", 3, false, false},
+	{"server", "Server", "#2563eb", 3, false, false},
+	{"storage", "Storage / NAS", "#0e7490", 3, false, false},
+	{"client", "Client device", "#475569", 3, false, false},
+	{"service", "Service (app)", "#16a34a", 4, false, true},
+	{"vlan", "VLAN (logical)", "#a16207", 5, true, true},
+	{"other", "Other", "#334155", 3, false, false},
 }
 
 var topoKindByKey = func() map[string]topoKind {
@@ -62,6 +73,11 @@ type topoNode struct {
 	X     float64  `json:"x"`
 	Y     float64  `json:"y"`
 	Ref   *topoRef `json:"ref,omitempty"`
+	// Detail is a short second line under the name (model or role, e.g.
+	// "Cisco 3750 switch"). Vlans are the VLAN numbers the node belongs to,
+	// drawn as colored tags; each must be listed in the diagram's VLANs.
+	Detail string `json:"detail,omitempty"`
+	Vlans  []int  `json:"vlans,omitempty"`
 }
 
 type topoLink struct {
@@ -69,12 +85,22 @@ type topoLink struct {
 	From  string `json:"from"`
 	To    string `json:"to"`
 	Label string `json:"label"`
-	Style string `json:"style,omitempty"` // "", "access" or "trunk"
+	Style string `json:"style,omitempty"` // "", "access", "trunk" or "logical"
+}
+
+// topoVLAN is a VLAN shown in the diagram's legend and available as a tag.
+type topoVLAN struct {
+	Num  int    `json:"num"`
+	Name string `json:"name"`
 }
 
 type topoLayout struct {
 	Nodes []topoNode `json:"nodes"`
 	Links []topoLink `json:"links"`
+	VLANs []topoVLAN `json:"vlans,omitempty"`
+	// HideLabels turns off every link label. By default every link is labeled
+	// (its own label, else its type) so no link looks undocumented.
+	HideLabels bool `json:"hideLabels,omitempty"`
 }
 
 type topoPayload struct {
@@ -87,7 +113,11 @@ const (
 	maxTopoLinks  = 1000
 	maxTopoLabel  = 80
 	maxTopoCoord  = 5000
-	topoNodeH     = 56
+	topoNodeH     = 56 // base node height; grows for a detail line and VLAN tags
+	topoDetailH   = 16
+	topoChipRowH  = 20
+	maxTopoVLANs  = 64
+	maxNodeVLANs  = 6
 	topoMaxBody   = 1 << 20
 	topoImageFont = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
 )
@@ -121,6 +151,26 @@ func (p *topoPayload) validate() error {
 		p.Links = []topoLink{}
 	}
 
+	if len(p.VLANs) > maxTopoVLANs {
+		return fmt.Errorf("too many VLANs (max %d)", maxTopoVLANs)
+	}
+	vlanSet := make(map[int]bool, len(p.VLANs))
+	for i := range p.VLANs {
+		v := &p.VLANs[i]
+		if v.Num < 1 || v.Num > 4094 {
+			return errors.New("VLAN number must be between 1 and 4094")
+		}
+		if vlanSet[v.Num] {
+			return fmt.Errorf("duplicate VLAN %d", v.Num)
+		}
+		vlanSet[v.Num] = true
+		v.Name = strings.TrimSpace(v.Name)
+		if utf8.RuneCountInString(v.Name) > maxTopoLabel {
+			return fmt.Errorf("VLAN name too long (max %d characters)", maxTopoLabel)
+		}
+	}
+	sort.Slice(p.VLANs, func(i, j int) bool { return p.VLANs[i].Num < p.VLANs[j].Num })
+
 	nodeIDs := make(map[string]bool, len(p.Nodes))
 	for i := range p.Nodes {
 		n := &p.Nodes[i]
@@ -145,6 +195,22 @@ func (p *topoPayload) validate() error {
 			return errors.New("node position out of range")
 		}
 		n.X, n.Y = math.Round(n.X), math.Round(n.Y)
+		n.Detail = strings.TrimSpace(n.Detail)
+		if utf8.RuneCountInString(n.Detail) > maxTopoLabel {
+			return fmt.Errorf("node detail too long (max %d characters)", maxTopoLabel)
+		}
+		if len(n.Vlans) > maxNodeVLANs {
+			return fmt.Errorf("a node can carry at most %d VLAN tags", maxNodeVLANs)
+		}
+		sort.Ints(n.Vlans)
+		for j, v := range n.Vlans {
+			if !vlanSet[v] {
+				return fmt.Errorf("node %q uses VLAN %d, which is not in the diagram's VLAN list", n.ID, v)
+			}
+			if j > 0 && n.Vlans[j-1] == v {
+				return fmt.Errorf("node %q lists VLAN %d twice", n.ID, v)
+			}
+		}
 		if n.Ref != nil && (!topoRefSet[n.Ref.Type] || n.Ref.ID <= 0) {
 			return errors.New("invalid inventory reference")
 		}
@@ -166,7 +232,7 @@ func (p *topoPayload) validate() error {
 		if l.From == l.To {
 			return errors.New("a link cannot connect a node to itself")
 		}
-		if l.Style != "" && l.Style != "access" && l.Style != "trunk" {
+		if l.Style != "" && l.Style != "access" && l.Style != "trunk" && l.Style != "logical" {
 			return fmt.Errorf("unknown link type %q", l.Style)
 		}
 		l.Label = strings.TrimSpace(l.Label)
@@ -182,11 +248,256 @@ func (p *topoPayload) layoutJSON() (string, error) {
 	return string(b), err
 }
 
-func topoNodeWidth(label string) float64 {
-	return math.Max(140, float64(utf8.RuneCountInString(label))*8+32)
+// topoVlanPalette colors VLAN tags. A VLAN's color is its position in the
+// diagram's number-sorted VLAN list, so the editor (topology.js) and this
+// renderer agree without storing colors.
+var topoVlanPalette = []string{"#2563eb", "#be185d", "#15803d", "#b45309", "#6d28d9", "#0e7490", "#b91c1c", "#4d7c0f"}
+
+func topoVlanColors(vlans []topoVLAN) map[int]string {
+	m := make(map[int]string, len(vlans))
+	for i, v := range vlans {
+		m[v.Num] = topoVlanPalette[i%len(topoVlanPalette)]
+	}
+	return m
+}
+
+func topoChipText(n int) string { return "VLAN " + strconv.Itoa(n) }
+func topoChipW(n int) float64   { return math.Ceil(float64(len(topoChipText(n)))*6.4) + 14 }
+
+func topoChipsW(nums []int) float64 {
+	w := 0.0
+	for i, n := range nums {
+		if i > 0 {
+			w += 4
+		}
+		w += topoChipW(n)
+	}
+	return w
+}
+
+func topoNodeWidth(n topoNode) float64 {
+	w := math.Max(140, float64(utf8.RuneCountInString(n.Label))*8+32)
+	if n.Detail != "" {
+		w = math.Max(w, float64(utf8.RuneCountInString(n.Detail))*6.4+32)
+	}
+	if len(n.Vlans) > 0 {
+		w = math.Max(w, topoChipsW(n.Vlans)+24)
+	}
+	return w
+}
+
+func topoNodeHeight(n topoNode) float64 {
+	h := float64(topoNodeH)
+	if n.Detail != "" {
+		h += topoDetailH
+	}
+	if len(n.Vlans) > 0 {
+		h += topoChipRowH
+	}
+	return h
 }
 
 func num(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+
+// topoLinkType classifies a link for drawing, labels and the legend. A link
+// touching a logical node (a service or legacy VLAN box) is logical, never a cable.
+func topoLinkType(k topoLink, from, to topoNode) string {
+	if k.Style == "logical" || topoKindByKey[from.Kind].Logical || topoKindByKey[to.Kind].Logical {
+		return "logical"
+	}
+	if k.Style == "trunk" || k.Style == "access" {
+		return k.Style
+	}
+	return "link"
+}
+
+// topoLinkTypes lists link types in legend order. Word is the fallback label.
+var topoLinkTypes = []struct{ Key, Word, Legend string }{
+	{"trunk", "Trunk", "Trunk cable: carries several VLANs"},
+	{"access", "Access", "Access cable: carries one VLAN"},
+	{"link", "Link", "Cable, VLANs not specified"},
+	{"logical", "Logical", "Dashed: a service running on a device, not a cable"},
+}
+
+// topoLinkStyle returns stroke color, width and dash pattern for a link type.
+// The editor (topology.js) uses the same values.
+func topoLinkStyle(t string) (string, int, string) {
+	switch t {
+	case "trunk":
+		return "#7c3aed", 4, ""
+	case "access":
+		return "#15803d", 2, ""
+	case "logical":
+		return "#94a3b8", 2, "6 5"
+	}
+	return "#64748b", 2, ""
+}
+
+// topoLinkLabel is the text drawn on a link: its own label, else its type, or
+// nothing when labels are hidden. Every cable gets a label so no cable looks
+// undocumented; dashed logical links stay unlabeled unless given a label (the
+// legend explains them, and a device with many services would otherwise carry
+// a pile of identical "runs on" tags).
+func topoLinkLabel(l topoLayout, k topoLink, typ string, from, to topoNode) string {
+	if l.HideLabels {
+		return ""
+	}
+	if k.Label != "" {
+		return k.Label
+	}
+	if typ == "logical" {
+		return ""
+	}
+	for _, t := range topoLinkTypes {
+		if t.Key == typ {
+			return t.Word
+		}
+	}
+	return ""
+}
+
+// topoLegend is the key drawn under exported diagrams. It only lists what the
+// diagram actually uses.
+type topoLegend struct {
+	links  []int // indexes into topoLinkTypes
+	vlans  []topoVLAN
+	kinds  []topoKind
+	colors map[int]string
+}
+
+func newTopoLegend(l topoLayout, byID map[string]topoNode, colors map[int]string) topoLegend {
+	lg := topoLegend{vlans: l.VLANs, colors: colors}
+	usedType := map[string]bool{}
+	for _, k := range l.Links {
+		from, ok1 := byID[k.From]
+		to, ok2 := byID[k.To]
+		if ok1 && ok2 {
+			usedType[topoLinkType(k, from, to)] = true
+		}
+	}
+	for i, t := range topoLinkTypes {
+		if usedType[t.Key] {
+			lg.links = append(lg.links, i)
+		}
+	}
+	usedKind := map[string]bool{}
+	for _, n := range l.Nodes {
+		usedKind[n.Kind] = true
+	}
+	for _, k := range topoKinds {
+		if usedKind[k.Key] {
+			lg.kinds = append(lg.kinds, k)
+		}
+	}
+	return lg
+}
+
+const (
+	legendRowH  = 24.0
+	legendGap   = 36.0
+	legendPad   = 20.0
+	legendHeadH = 36.0
+)
+
+func (lg topoLegend) columns() (widths []float64, rows int) {
+	textW := func(s string) float64 { return float64(utf8.RuneCountInString(s)) * 6.6 }
+	if len(lg.links) > 0 {
+		w := 0.0
+		for _, i := range lg.links {
+			w = math.Max(w, textW(topoLinkTypes[i].Legend))
+		}
+		widths = append(widths, 46+w)
+		rows = max(rows, len(lg.links))
+	}
+	if len(lg.vlans) > 0 {
+		chip, name := 0.0, 0.0
+		for _, v := range lg.vlans {
+			chip = math.Max(chip, topoChipW(v.Num))
+			name = math.Max(name, textW(v.Name))
+		}
+		widths = append(widths, chip+10+name)
+		rows = max(rows, len(lg.vlans))
+	}
+	if len(lg.kinds) > 0 {
+		w := 0.0
+		for _, k := range lg.kinds {
+			w = math.Max(w, textW(k.Label))
+		}
+		widths = append(widths, 24+w)
+		rows = max(rows, len(lg.kinds))
+	}
+	return widths, rows
+}
+
+func (lg topoLegend) size() (w, h float64) {
+	widths, rows := lg.columns()
+	if len(widths) == 0 {
+		return 0, 0
+	}
+	w = 2 * legendPad
+	for i, cw := range widths {
+		if i > 0 {
+			w += legendGap
+		}
+		w += cw
+	}
+	return w, legendHeadH + float64(rows)*legendRowH + 14
+}
+
+func (lg topoLegend) write(b *strings.Builder, x, y float64) {
+	esc := html.EscapeString
+	w, h := lg.size()
+	if w == 0 {
+		return
+	}
+	widths, _ := lg.columns()
+	fmt.Fprintf(b, `<rect x="%s" y="%s" width="%s" height="%s" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>`+"\n", num(x), num(y), num(w), num(h))
+	cx, col := x+legendPad, 0
+	head := func(t string) {
+		fmt.Fprintf(b, `<text x="%s" y="%s" font-size="11" font-weight="700" letter-spacing="0.6" fill="#64748b">%s</text>`+"\n", num(cx), num(y+24), esc(t))
+	}
+	rowY := func(i int) float64 { return y + legendHeadH + float64(i)*legendRowH + 12 }
+	next := func() { cx += widths[col] + legendGap; col++ }
+	if len(lg.links) > 0 {
+		head("LINES")
+		for i, ti := range lg.links {
+			stroke, width, dash := topoLinkStyle(topoLinkTypes[ti].Key)
+			d := ""
+			if dash != "" {
+				d = fmt.Sprintf(` stroke-dasharray="%s"`, dash)
+			}
+			fmt.Fprintf(b, `<line x1="%s" y1="%s" x2="%s" y2="%s" stroke="%s" stroke-width="%d"%s/>`+"\n",
+				num(cx), num(rowY(i)-4), num(cx+34), num(rowY(i)-4), stroke, width, d)
+			fmt.Fprintf(b, `<text x="%s" y="%s" font-size="12" fill="#334155">%s</text>`+"\n", num(cx+46), num(rowY(i)), esc(topoLinkTypes[ti].Legend))
+		}
+		next()
+	}
+	if len(lg.vlans) > 0 {
+		head("VLAN TAGS")
+		chip := 0.0
+		for _, v := range lg.vlans {
+			chip = math.Max(chip, topoChipW(v.Num))
+		}
+		for i, v := range lg.vlans {
+			cw := topoChipW(v.Num)
+			fmt.Fprintf(b, `<rect x="%s" y="%s" width="%s" height="16" rx="8" fill="%s"/>`+"\n", num(cx), num(rowY(i)-12), num(cw), lg.colors[v.Num])
+			fmt.Fprintf(b, `<text x="%s" y="%s" font-size="10" font-weight="700" text-anchor="middle" fill="#ffffff">%s</text>`+"\n", num(cx+cw/2), num(rowY(i)), esc(topoChipText(v.Num)))
+			fmt.Fprintf(b, `<text x="%s" y="%s" font-size="12" fill="#334155">%s</text>`+"\n", num(cx+chip+10), num(rowY(i)), esc(v.Name))
+		}
+		next()
+	}
+	if len(lg.kinds) > 0 {
+		head("DEVICE TYPES")
+		for i, k := range lg.kinds {
+			dash := ""
+			if k.Logical {
+				dash = ` stroke-dasharray="3 2"`
+			}
+			fmt.Fprintf(b, `<rect x="%s" y="%s" width="14" height="14" rx="3" fill="#ffffff" stroke="%s" stroke-width="2"%s/>`+"\n", num(cx), num(rowY(i)-12), k.Color, dash)
+			fmt.Fprintf(b, `<text x="%s" y="%s" font-size="12" fill="#334155">%s</text>`+"\n", num(cx+24), num(rowY(i)), esc(k.Label))
+		}
+	}
+}
 
 // renderTopologySVG draws a diagram as a standalone SVG on a white background.
 // The editor draws the same shapes and sizes client-side (static/topology.js);
@@ -195,25 +506,30 @@ func renderTopologySVG(name string, l topoLayout) string {
 	esc := html.EscapeString
 	const pad, titleH = 40.0, 44.0
 
+	byID := make(map[string]topoNode, len(l.Nodes))
 	minX, minY, maxX, maxY := 0.0, 0.0, 0.0, 0.0
 	if len(l.Nodes) > 0 {
 		minX, minY = math.Inf(1), math.Inf(1)
 		maxX, maxY = math.Inf(-1), math.Inf(-1)
 		for _, n := range l.Nodes {
+			byID[n.ID] = n
 			minX, minY = math.Min(minX, n.X), math.Min(minY, n.Y)
-			maxX = math.Max(maxX, n.X+topoNodeWidth(n.Label))
-			maxY = math.Max(maxY, n.Y+topoNodeH)
+			maxX = math.Max(maxX, n.X+topoNodeWidth(n))
+			maxY = math.Max(maxY, n.Y+topoNodeHeight(n))
 		}
 	}
+	colors := topoVlanColors(l.VLANs)
+	legend := newTopoLegend(l, byID, colors)
+	lgW, lgH := legend.size()
+
 	vx, vy := minX-pad, minY-pad-titleH
-	vw, vh := math.Max(maxX-minX+2*pad, 360), maxY-minY+2*pad+titleH
+	vw, vh := math.Max(math.Max(maxX-minX+2*pad, 360), lgW+2*pad), maxY-minY+2*pad+titleH
 	if len(l.Nodes) == 0 {
 		vh += 40
 	}
-
-	byID := make(map[string]topoNode, len(l.Nodes))
-	for _, n := range l.Nodes {
-		byID[n.ID] = n
+	legendY := maxY + 30
+	if lgH > 0 {
+		vh += lgH + 30
 	}
 
 	var b strings.Builder
@@ -229,6 +545,10 @@ func renderTopologySVG(name string, l topoLayout) string {
 			num(vx+20), num(vy+titleH+40))
 	}
 
+	center := func(n topoNode) (float64, float64) {
+		return n.X + topoNodeWidth(n)/2, n.Y + topoNodeHeight(n)/2
+	}
+
 	// Links first so nodes paint over the line ends.
 	for _, k := range l.Links {
 		from, ok1 := byID[k.From]
@@ -236,36 +556,68 @@ func renderTopologySVG(name string, l topoLayout) string {
 		if !ok1 || !ok2 {
 			continue
 		}
-		x1, y1 := from.X+topoNodeWidth(from.Label)/2, from.Y+topoNodeH/2
-		x2, y2 := to.X+topoNodeWidth(to.Label)/2, to.Y+topoNodeH/2
-		stroke, width := topoLinkStyle(k.Style)
-		fmt.Fprintf(&b, `<line x1="%s" y1="%s" x2="%s" y2="%s" stroke="%s" stroke-width="%d"/>`+"\n",
-			num(x1), num(y1), num(x2), num(y2), stroke, width)
+		x1, y1 := center(from)
+		x2, y2 := center(to)
+		stroke, width, dash := topoLinkStyle(topoLinkType(k, from, to))
+		d := ""
+		if dash != "" {
+			d = fmt.Sprintf(` stroke-dasharray="%s"`, dash)
+		}
+		fmt.Fprintf(&b, `<line x1="%s" y1="%s" x2="%s" y2="%s" stroke="%s" stroke-width="%d"%s/>`+"\n",
+			num(x1), num(y1), num(x2), num(y2), stroke, width, d)
 	}
 	for _, n := range l.Nodes {
 		kind := topoKindByKey[n.Kind]
-		w := topoNodeWidth(n.Label)
-		fmt.Fprintf(&b, `<rect x="%s" y="%s" width="%s" height="%d" rx="8" fill="#ffffff" stroke="%s" stroke-width="2"/>`+"\n",
-			num(n.X), num(n.Y), num(w), topoNodeH, kind.Color)
+		w, h := topoNodeWidth(n), topoNodeHeight(n)
+		dash := ""
+		if kind.Logical {
+			dash = ` stroke-dasharray="6 4"`
+		}
+		fmt.Fprintf(&b, `<rect x="%s" y="%s" width="%s" height="%s" rx="8" fill="#ffffff" stroke="%s" stroke-width="2"%s/>`+"\n",
+			num(n.X), num(n.Y), num(w), num(h), kind.Color, dash)
 		fmt.Fprintf(&b, `<text x="%s" y="%s" font-size="10" font-weight="600" text-anchor="middle" fill="%s">%s</text>`+"\n",
 			num(n.X+w/2), num(n.Y+20), kind.Color, esc(strings.ToUpper(kind.Label)))
 		fmt.Fprintf(&b, `<text x="%s" y="%s" font-size="14" font-weight="700" text-anchor="middle" fill="#0f172a">%s</text>`+"\n",
 			num(n.X+w/2), num(n.Y+40), esc(n.Label))
+		base := float64(topoNodeH)
+		if n.Detail != "" {
+			fmt.Fprintf(&b, `<text x="%s" y="%s" font-size="11" text-anchor="middle" fill="#64748b">%s</text>`+"\n",
+				num(n.X+w/2), num(n.Y+56), esc(n.Detail))
+			base += topoDetailH
+		}
+		if len(n.Vlans) > 0 {
+			cx := n.X + (w-topoChipsW(n.Vlans))/2
+			for _, v := range n.Vlans {
+				cw := topoChipW(v)
+				fmt.Fprintf(&b, `<rect x="%s" y="%s" width="%s" height="16" rx="8" fill="%s"/>`+"\n", num(cx), num(n.Y+base-2), num(cw), colors[v])
+				fmt.Fprintf(&b, `<text x="%s" y="%s" font-size="10" font-weight="700" text-anchor="middle" fill="#ffffff">%s</text>`+"\n",
+					num(cx+cw/2), num(n.Y+base+9), esc(topoChipText(v)))
+				cx += cw + 4
+			}
+		}
 	}
 	// Link labels last so nodes never cover them.
 	for _, k := range l.Links {
 		from, ok1 := byID[k.From]
 		to, ok2 := byID[k.To]
-		if !ok1 || !ok2 || k.Label == "" {
+		if !ok1 || !ok2 {
 			continue
 		}
-		mx := (from.X + topoNodeWidth(from.Label)/2 + to.X + topoNodeWidth(to.Label)/2) / 2
-		my := (from.Y + to.Y + topoNodeH) / 2
-		w := float64(utf8.RuneCountInString(k.Label))*7 + 12
+		text := topoLinkLabel(l, k, topoLinkType(k, from, to), from, to)
+		if text == "" {
+			continue
+		}
+		x1, y1 := center(from)
+		x2, y2 := center(to)
+		mx, my := (x1+x2)/2, (y1+y2)/2
+		w := float64(utf8.RuneCountInString(text))*7 + 12
 		fmt.Fprintf(&b, `<rect x="%s" y="%s" width="%s" height="20" rx="4" fill="#ffffff" stroke="#cbd5e1"/>`+"\n",
 			num(mx-w/2), num(my-10), num(w))
 		fmt.Fprintf(&b, `<text x="%s" y="%s" font-size="12" text-anchor="middle" fill="#334155">%s</text>`+"\n",
-			num(mx), num(my+4), esc(k.Label))
+			num(mx), num(my+4), esc(text))
+	}
+	if lgH > 0 {
+		legend.write(&b, vx+20, legendY)
 	}
 	b.WriteString("</svg>\n")
 	return b.String()
@@ -329,21 +681,24 @@ type topoListPage struct {
 type invItem struct {
 	ID    int64  `json:"id"`
 	Label string `json:"label"`
-	Num   int64  `json:"num,omitempty"` // VLAN number
+	Num   int64  `json:"num,omitempty"`  // VLAN number
+	Name  string `json:"name,omitempty"` // VLAN name
 }
 
 type invDevice struct {
-	ID    int64   `json:"id"`
-	Label string  `json:"label"`
-	Kind  string  `json:"kind"` // topology node type, derived from the device type
-	VLANs []int64 `json:"vlans"`
+	ID     int64   `json:"id"`
+	Label  string  `json:"label"`
+	Kind   string  `json:"kind"`   // topology node type, derived from the device type
+	Detail string  `json:"detail"` // the device's Role, shown under its name
+	VLANs  []int64 `json:"vlans"`
 }
 
 // deviceTopoKind maps a device type to the topology node type used when the
 // device is imported into a diagram. Unknown types fall back to "server".
 var deviceTopoKind = map[string]string{
 	"Server":           "server",
-	"NAS":              "server",
+	"NAS":              "storage",
+	"Hypervisor node":  "hypervisor",
 	"PC / Workstation": "client",
 	"Laptop":           "client",
 	"Switch":           "switch",
@@ -360,19 +715,6 @@ type invConn struct {
 	Mode     string  `json:"mode"` // "Access" or "Trunk"
 	Untagged int64   `json:"untagged"`
 	Tagged   []int64 `json:"tagged"`
-}
-
-// topoLinkStyle returns the stroke color and width for a link type. Trunks are
-// thick and purple, access links thin and green, everything else plain grey.
-// The editor (topology.js) uses the same values.
-func topoLinkStyle(style string) (string, int) {
-	switch style {
-	case "trunk":
-		return "#7c3aed", 4
-	case "access":
-		return "#15803d", 2
-	}
-	return "#64748b", 2
 }
 
 type invService struct {
@@ -411,15 +753,15 @@ func toInt(v any) int64 {
 func (s *Server) inventory() (topoInventory, error) {
 	inv := topoInventory{VLANs: []invItem{}, Devices: []invDevice{}, Services: []invService{}, Connections: []invConn{}}
 
-	rows, err := queryAll(s.db, "SELECT id, 'VLAN ' || number || ' - ' || name, number FROM vlans ORDER BY number")
+	rows, err := queryAll(s.db, "SELECT id, 'VLAN ' || number || ' - ' || name, number, name FROM vlans ORDER BY number")
 	if err != nil {
 		return inv, err
 	}
 	for _, r := range rows {
-		inv.VLANs = append(inv.VLANs, invItem{ID: toInt(r[0]), Label: str(r[1]), Num: toInt(r[2])})
+		inv.VLANs = append(inv.VLANs, invItem{ID: toInt(r[0]), Label: str(r[1]), Num: toInt(r[2]), Name: str(r[3])})
 	}
 
-	rows, err = queryAll(s.db, "SELECT id, name, type FROM devices ORDER BY name")
+	rows, err = queryAll(s.db, "SELECT id, name, type, COALESCE(role, '') FROM devices ORDER BY name")
 	if err != nil {
 		return inv, err
 	}
@@ -430,7 +772,7 @@ func (s *Server) inventory() (topoInventory, error) {
 			kind = "server"
 		}
 		devIdx[toInt(r[0])] = len(inv.Devices)
-		inv.Devices = append(inv.Devices, invDevice{ID: toInt(r[0]), Label: str(r[1]), Kind: kind, VLANs: []int64{}})
+		inv.Devices = append(inv.Devices, invDevice{ID: toInt(r[0]), Label: str(r[1]), Kind: kind, Detail: str(r[3]), VLANs: []int64{}})
 	}
 	rows, err = queryAll(s.db, "SELECT device_id, vlan_id FROM device_vlans ORDER BY device_id, vlan_id")
 	if err != nil {

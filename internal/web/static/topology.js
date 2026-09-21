@@ -7,13 +7,17 @@
   if (!root) return;
 
   var NS = "http://www.w3.org/2000/svg";
-  var W = 2000, H = 1200, NODE_H = 56, GRID = 10, MAX_LABEL = 80;
-  // Same values as topoLinkStyle in topology.go.
-  var LINK_STYLES = {
-    "": { color: "#64748b", width: 2 },
-    access: { color: "#15803d", width: 2 },
-    trunk: { color: "#7c3aed", width: 4 },
-  };
+  var W = 2000, H = 1200, NODE_H = 56, DETAIL_H = 16, CHIP_ROW_H = 20, GRID = 10, MAX_LABEL = 80, MAX_NODE_VLANS = 6;
+  var cw = W, ch = H; // current canvas size; grows with the diagram
+  // Same values as topoLinkTypes / topoLinkStyle in topology.go.
+  var LINK_TYPES = [
+    { key: "trunk", word: "Trunk", legend: "Trunk cable: carries several VLANs", color: "#7c3aed", width: 4, dash: "" },
+    { key: "access", word: "Access", legend: "Access cable: carries one VLAN", color: "#15803d", width: 2, dash: "" },
+    { key: "link", word: "Link", legend: "Cable, VLANs not specified", color: "#64748b", width: 2, dash: "" },
+    { key: "logical", word: "Logical", legend: "Dashed: a service running on a device, not a cable", color: "#94a3b8", width: 2, dash: "6 5" },
+  ];
+  // Same as topoVlanPalette: a VLAN's color is its position in the sorted list.
+  var VLAN_PALETTE = ["#2563eb", "#be185d", "#15803d", "#b45309", "#6d28d9", "#0e7490", "#b91c1c", "#4d7c0f"];
   var topoId = root.dataset.id;
 
   function $(id) { return document.getElementById(id); }
@@ -24,6 +28,8 @@
   var doc = json("layout-json");
   var nodes = doc.nodes || [];
   var links = doc.links || [];
+  var vlans = doc.vlans || [];          // [{num, name}] shown in the legend and offered as tags
+  var hideLabels = !!doc.hideLabels;    // false: every link is labeled (its label, else its type)
   var kindMap = {};
   kinds.forEach(function (k) { kindMap[k.key] = k; });
 
@@ -44,7 +50,43 @@
     if (text != null) e.textContent = text;
     return e;
   }
-  function nodeW(n) { return Math.max(140, n.label.length * 8 + 32); }
+  function chipText(num) { return "VLAN " + num; }
+  function chipW(num) { return Math.ceil(chipText(num).length * 6.4) + 14; }
+  function chipsW(nums) {
+    return nums.reduce(function (w, v, i) { return w + (i ? 4 : 0) + chipW(v); }, 0);
+  }
+  function nodeW(n) {
+    var w = Math.max(140, n.label.length * 8 + 32);
+    if (n.detail) w = Math.max(w, n.detail.length * 6.4 + 32);
+    if (n.vlans && n.vlans.length) w = Math.max(w, chipsW(n.vlans) + 24);
+    return w;
+  }
+  function nodeH(n) {
+    return NODE_H + (n.detail ? DETAIL_H : 0) + (n.vlans && n.vlans.length ? CHIP_ROW_H : 0);
+  }
+  function sortVlans() { vlans.sort(function (a, b) { return a.num - b.num; }); }
+  sortVlans();
+  function vlanColor(num) {
+    for (var i = 0; i < vlans.length; i++) if (vlans[i].num === num) return VLAN_PALETTE[i % VLAN_PALETTE.length];
+    return "#64748b";
+  }
+  function isLogicalKind(kind) { return !!(kindMap[kind] && kindMap[kind].logical); }
+  // A link touching a logical node (a service, or a legacy VLAN box) is logical, never a cable.
+  function linkType(l, a, b) {
+    if (l.style === "logical" || isLogicalKind(a.kind) || isLogicalKind(b.kind)) return "logical";
+    if (l.style === "trunk" || l.style === "access") return l.style;
+    return "link";
+  }
+  function typeInfo(key) {
+    for (var i = 0; i < LINK_TYPES.length; i++) if (LINK_TYPES[i].key === key) return LINK_TYPES[i];
+    return LINK_TYPES[2];
+  }
+  function linkText(l, key, a, b) {
+    if (hideLabels) return "";
+    if (l.label) return l.label;
+    if (key === "logical") return ""; // explained by the legend; see topoLinkLabel
+    return typeInfo(key).word;
+  }
   function snap(v) { return Math.round(v / GRID) * GRID; }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
   function byId(list, id) {
@@ -77,39 +119,67 @@
     svg.setAttribute("class", linkMode ? "linking" : "");
     svg.setAttribute("font-family", "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif");
 
+    cw = W; ch = H;
+    nodes.forEach(function (n) {
+      cw = Math.max(cw, n.x + nodeW(n) + 80);
+      ch = Math.max(ch, n.y + nodeH(n) + 80);
+    });
+    svg.setAttribute("width", cw);
+    svg.setAttribute("height", ch);
+    svg.setAttribute("viewBox", "0 0 " + cw + " " + ch);
+
     var defs = el("defs", {});
     var pat = el("pattern", { id: "grid", width: 20, height: 20, patternUnits: "userSpaceOnUse" });
     pat.appendChild(el("path", { d: "M20 0H0V20", fill: "none", stroke: "#eef2f7", "stroke-width": 1 }));
     defs.appendChild(pat);
     svg.appendChild(defs);
-    svg.appendChild(el("rect", { x: 0, y: 0, width: W, height: H, fill: "url(#grid)", "data-bg": 1 }));
+    svg.appendChild(el("rect", { x: 0, y: 0, width: cw, height: ch, fill: "url(#grid)", "data-bg": 1 }));
 
     var labels = [];
     links.forEach(function (l) {
       var a = byId(nodes, l.from), b = byId(nodes, l.to);
       if (!a || !b) return;
       var sel = selected && selected.type === "link" && selected.id === l.id;
-      var x1 = a.x + nodeW(a) / 2, y1 = a.y + NODE_H / 2;
-      var x2 = b.x + nodeW(b) / 2, y2 = b.y + NODE_H / 2;
+      var x1 = a.x + nodeW(a) / 2, y1 = a.y + nodeH(a) / 2;
+      var x2 = b.x + nodeW(b) / 2, y2 = b.y + nodeH(b) / 2;
+      var key = linkType(l, a, b), ls = typeInfo(key);
       var g = el("g", { "data-link": l.id, "class": "link" });
-      var ls = LINK_STYLES[l.style] || LINK_STYLES[""];
-      g.appendChild(el("line", { x1: x1, y1: y1, x2: x2, y2: y2, stroke: sel ? "#2563eb" : ls.color, "stroke-width": sel ? ls.width + 2 : ls.width }));
+      var line = el("line", { x1: x1, y1: y1, x2: x2, y2: y2, stroke: sel ? "#2563eb" : ls.color, "stroke-width": sel ? ls.width + 2 : ls.width });
+      if (ls.dash) line.setAttribute("stroke-dasharray", ls.dash);
+      g.appendChild(line);
       g.appendChild(el("line", { x1: x1, y1: y1, x2: x2, y2: y2, stroke: "transparent", "stroke-width": 14 }));
-      if (l.label) labels.push({ id: l.id, text: l.label, x: (x1 + x2) / 2, y: (y1 + y2) / 2 });
+      var text = linkText(l, key, a, b);
+      if (text) labels.push({ id: l.id, text: text, x: (x1 + x2) / 2, y: (y1 + y2) / 2 });
       svg.appendChild(g);
     });
 
     nodes.forEach(function (n) {
       var k = kindMap[n.kind] || kindMap.other;
       var sel = selected && selected.type === "node" && selected.id === n.id;
-      var w = nodeW(n);
+      var w = nodeW(n), h = nodeH(n);
       var g = el("g", { "data-node": n.id, "class": "node" });
+      // Logical nodes (services) always have a dashed border; "linking from" is shown by a thick border instead.
       g.appendChild(el("rect", {
-        x: n.x, y: n.y, width: w, height: NODE_H, rx: 8, fill: "#fff", stroke: k.color,
-        "stroke-width": sel ? 4 : 2, "stroke-dasharray": linkFrom === n.id ? "6 4" : "none",
+        x: n.x, y: n.y, width: w, height: h, rx: 8, fill: "#fff", stroke: k.color,
+        "stroke-width": sel || (k.logical && linkFrom === n.id) ? 4 : 2,
+        "stroke-dasharray": k.logical || linkFrom === n.id ? "6 4" : "none",
       }));
       g.appendChild(el("text", { x: n.x + w / 2, y: n.y + 20, "font-size": 10, "font-weight": 600, "text-anchor": "middle", fill: k.color }, k.label.toUpperCase()));
       g.appendChild(el("text", { x: n.x + w / 2, y: n.y + 40, "font-size": 14, "font-weight": 700, "text-anchor": "middle", fill: "#0f172a" }, n.label));
+      var base = NODE_H;
+      if (n.detail) {
+        g.appendChild(el("text", { x: n.x + w / 2, y: n.y + 56, "font-size": 11, "text-anchor": "middle", fill: "#64748b" }, n.detail));
+        base += DETAIL_H;
+      }
+      if (n.vlans && n.vlans.length) {
+        var cx = n.x + (w - chipsW(n.vlans)) / 2;
+        n.vlans.forEach(function (v) {
+          var wv = chipW(v);
+          g.appendChild(el("rect", { x: cx, y: n.y + base - 2, width: wv, height: 16, rx: 8, fill: vlanColor(v) }));
+          g.appendChild(el("text", { x: cx + wv / 2, y: n.y + base + 9, "font-size": 10, "font-weight": 700, "text-anchor": "middle", fill: "#fff" }, chipText(v)));
+          cx += wv + 4;
+        });
+      }
       svg.appendChild(g);
     });
 
@@ -122,7 +192,138 @@
       svg.appendChild(g);
     });
     updateSyncNote();
+    renderLegend();
+    renderVlanManager();
+    updateLegacyNote();
+    $("labels-state").textContent = hideLabels ? "off" : "on";
   }
+
+  // The key under the canvas: only what this diagram uses, like the exported image.
+  function renderLegend() {
+    var box = $("legend");
+    box.innerHTML = "";
+    var used = {}, kindsUsed = {};
+    links.forEach(function (l) {
+      var a = byId(nodes, l.from), b = byId(nodes, l.to);
+      if (a && b) used[linkType(l, a, b)] = true;
+    });
+    nodes.forEach(function (n) { kindsUsed[n.kind] = true; });
+    function section(title) {
+      var d = document.createElement("div");
+      d.className = "lg-sec";
+      var h = document.createElement("span");
+      h.className = "tlabel";
+      h.textContent = title;
+      d.appendChild(h);
+      box.appendChild(d);
+      return d;
+    }
+    function row(parent, iconEl, text) {
+      var r = document.createElement("div");
+      r.className = "lg-row";
+      r.appendChild(iconEl);
+      var t = document.createElement("span");
+      t.textContent = text;
+      r.appendChild(t);
+      parent.appendChild(r);
+    }
+    var lt = LINK_TYPES.filter(function (t) { return used[t.key]; });
+    if (lt.length) {
+      var sec = section("Lines");
+      lt.forEach(function (t) {
+        var sv = el("svg", { width: 36, height: 12, viewBox: "0 0 36 12", "aria-hidden": "true" });
+        var ln = el("line", { x1: 0, y1: 6, x2: 36, y2: 6, stroke: t.color, "stroke-width": t.width });
+        if (t.dash) ln.setAttribute("stroke-dasharray", t.dash);
+        sv.appendChild(ln);
+        row(sec, sv, t.legend);
+      });
+    }
+    if (vlans.length) {
+      var vs = section("VLAN tags");
+      vlans.forEach(function (v) {
+        var chip = document.createElement("span");
+        chip.className = "chip";
+        chip.style.background = vlanColor(v.num);
+        chip.textContent = chipText(v.num);
+        row(vs, chip, v.name);
+      });
+    }
+    var ks = kinds.filter(function (k) { return kindsUsed[k.key]; });
+    if (ks.length) {
+      var ds = section("Device types");
+      ks.forEach(function (k) {
+        var sw = document.createElement("span");
+        sw.className = "swatch";
+        sw.style.borderColor = k.color;
+        if (k.logical) sw.style.borderStyle = "dashed";
+        row(ds, sw, k.label);
+      });
+    }
+    box.hidden = !box.children.length;
+  }
+
+  // ---- VLAN tags: the diagram's VLAN list ---------------------------------
+  function addVlanDef(num, name) {
+    for (var i = 0; i < vlans.length; i++) {
+      if (vlans[i].num === num) {
+        if (!vlans[i].name && name) { vlans[i].name = name.slice(0, MAX_LABEL); setDirty(true); }
+        return false;
+      }
+    }
+    vlans.push({ num: num, name: (name || "").slice(0, MAX_LABEL) });
+    sortVlans();
+    setDirty(true);
+    return true;
+  }
+
+  function removeVlanDef(num) {
+    vlans = vlans.filter(function (v) { return v.num !== num; });
+    nodes.forEach(function (n) {
+      if (n.vlans) {
+        n.vlans = n.vlans.filter(function (v) { return v !== num; });
+        if (!n.vlans.length) delete n.vlans;
+      }
+    });
+    setDirty(true);
+    syncProps();
+    render();
+  }
+
+  function renderVlanManager() {
+    var list = $("vlan-list");
+    list.innerHTML = "";
+    $("vlan-count").textContent = vlans.length ? " (" + vlans.length + ")" : "";
+    vlans.forEach(function (v) {
+      var r = document.createElement("div");
+      r.className = "lg-row";
+      var chip = document.createElement("span");
+      chip.className = "chip";
+      chip.style.background = vlanColor(v.num);
+      chip.textContent = chipText(v.num);
+      var t = document.createElement("span");
+      t.textContent = v.name || "(no name)";
+      var x = document.createElement("button");
+      x.type = "button";
+      x.className = "icon-btn danger";
+      x.title = "Remove " + chipText(v.num) + " from this diagram";
+      x.setAttribute("aria-label", x.title);
+      x.textContent = "×";
+      x.addEventListener("click", function () { removeVlanDef(v.num); });
+      r.appendChild(chip); r.appendChild(t); r.appendChild(x);
+      list.appendChild(r);
+    });
+  }
+
+  $("btn-vlan-add").addEventListener("click", function () {
+    var num = Number($("vlan-num").value);
+    if (!Number.isInteger(num) || num < 1 || num > 4094) { setStatus("VLAN number must be between 1 and 4094.", true); return; }
+    if (!addVlanDef(num, $("vlan-name").value.trim())) { setStatus("VLAN " + num + " is already listed."); return; }
+    $("vlan-num").value = "";
+    $("vlan-name").value = "";
+    setStatus("Added " + chipText(num) + ". Select a device to tag it.");
+    syncProps();
+    render();
+  });
 
   function syncProps() {
     var item = null;
@@ -133,18 +334,76 @@
     $("prop-style-wrap").hidden = !(item && selected.type === "link");
     var isNode = !!item && selected.type === "node";
     var isLink = !!item && selected.type === "link";
+    $("prop-detail-wrap").hidden = !isNode;
+    $("prop-vlans-wrap").hidden = !isNode;
     // Only device-like nodes can be tied to an inventory device (VLAN/service nodes keep their own refs).
     var refOK = isNode && (!item.ref || item.ref.type === "devices");
     $("prop-ref-wrap").hidden = !refOK;
     $("prop-conn").hidden = !isLink;
     if (item) {
       $("prop-label").value = item.label;
-      if (isNode) $("prop-kind").value = item.kind;
-      else $("prop-style").value = item.style || "";
+      if (isNode) {
+        $("prop-kind").value = item.kind;
+        $("prop-detail").value = item.detail || "";
+        fillVlanChecks(item);
+      } else {
+        $("prop-style").value = item.style || "";
+      }
       if (refOK) $("prop-ref").value = item.ref ? String(item.ref.id) : "";
       if (isLink) syncConnPanel(item);
     }
   }
+
+  // One checkbox per VLAN in the diagram's list; ticked ones become tags on the node.
+  function fillVlanChecks(n) {
+    var box = $("prop-vlans");
+    box.innerHTML = "";
+    if (!vlans.length) {
+      var hint = document.createElement("small");
+      hint.textContent = "No VLANs yet: add them under “VLAN tags” or import from inventory.";
+      box.appendChild(hint);
+      return;
+    }
+    vlans.forEach(function (v) {
+      var lab = document.createElement("label");
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!(n.vlans && n.vlans.indexOf(v.num) >= 0);
+      cb.addEventListener("change", function () {
+        var cur = (n.vlans || []).filter(function (x) { return x !== v.num; });
+        if (cb.checked) {
+          if (cur.length >= MAX_NODE_VLANS) {
+            cb.checked = false;
+            setStatus("A node can carry at most " + MAX_NODE_VLANS + " VLAN tags.", true);
+            return;
+          }
+          cur.push(v.num);
+        }
+        cur.sort(function (a, b) { return a - b; });
+        if (cur.length) n.vlans = cur; else delete n.vlans;
+        setDirty(true);
+        render();
+      });
+      var chip = document.createElement("span");
+      chip.className = "chip";
+      chip.style.background = vlanColor(v.num);
+      chip.textContent = chipText(v.num);
+      lab.appendChild(cb);
+      lab.appendChild(chip);
+      if (v.name) lab.appendChild(document.createTextNode(" " + v.name));
+      box.appendChild(lab);
+    });
+  }
+
+  $("prop-detail").addEventListener("input", function () {
+    if (!selected || selected.type !== "node") return;
+    var n = byId(nodes, selected.id);
+    if (!n) return;
+    var v = this.value.slice(0, MAX_LABEL);
+    if (v.trim()) n.detail = v; else delete n.detail;
+    setDirty(true);
+    render();
+  });
 
   function select(sel) {
     selected = sel;
@@ -209,8 +468,8 @@
     var n = byId(nodes, drag.id);
     if (!n) return;
     var p = point(ev);
-    var x = clamp(snap(p.x - drag.dx), 0, W - nodeW(n));
-    var y = clamp(snap(p.y - drag.dy), 0, H - NODE_H);
+    var x = clamp(snap(p.x - drag.dx), 0, 5000 - nodeW(n));
+    var y = clamp(snap(p.y - drag.dy), 0, 5000 - nodeH(n));
     if (x !== n.x || y !== n.y) {
       n.x = x; n.y = y;
       setDirty(true);
@@ -336,15 +595,11 @@
   nameInput.addEventListener("input", function () { setDirty(true); });
 
   // ---- inventory ----------------------------------------------------------
-  // Rows: VLANs on top, then network gear (so links to switches/routers run
-  // between rows instead of behind other nodes), then compute devices, then services.
-  var INV_ROWS = { vlans: 60, network: 220, devices: 380, services: 540 };
-  var NETWORK_KINDS = { router: 1, firewall: 1, switch: 1, ap: 1 };
-  function invRow(type, item) {
-    if (type === "devices" && NETWORK_KINDS[item.kind]) return INV_ROWS.network;
-    return INV_ROWS[type];
+  var TIER_Y = 60, TIER_STEP = 170;
+  function tierOf(n) {
+    var k = kindMap[n.kind];
+    return k && typeof k.tier === "number" ? k.tier : 3;
   }
-  var INV_KIND = { vlans: "vlan", devices: "server", services: "service" };
 
   function fillInventory() {
     var sel = $("inv-select");
@@ -364,7 +619,7 @@
       });
       sel.appendChild(og);
     }
-    group("VLANs", "vlans", inventory.vlans);
+    group("VLANs (added as tags)", "vlans", inventory.vlans);
     group("Devices", "devices", inventory.devices);
     group("Services", "services", inventory.services);
     if (!sel.options.length) {
@@ -476,36 +731,55 @@
   }
   window.addEventListener("focus", refreshInventory);
 
-  function addInventoryNode(type, item) {
-    if (hasRef(type, item.id)) return null;
-    // Devices carry their own node type (switch, router, firewall, ...).
-    return addNode(item.kind || INV_KIND[type], item.label, { type: type, id: item.id }, invRow(type, item));
+  function invVlanNum(id) {
+    var v = inventory.vlans.filter(function (x) { return x.id === id; })[0];
+    return v ? v.num : 0;
+  }
+  function invVlanName(num) {
+    var v = inventory.vlans.filter(function (x) { return x.num === num; })[0];
+    return v ? v.name || "" : "";
   }
 
-  // Links devices to their VLANs and services to their host (or VLAN), for
-  // whichever of those nodes are on the diagram. Skips links that exist.
-  function linkInventory() {
-    function connect(a, b) {
-      if (a && b) {
-        var exists = links.some(function (l) {
-          return (l.from === a.id && l.to === b.id) || (l.from === b.id && l.to === a.id);
-        });
-        if (!exists) addLink(a.id, b.id);
-      }
+  // VLANs become tags on devices (never boxes). Services are their own nodes,
+  // but logical ones: dashed border, dashed link to the device they run on.
+  function addInventoryNode(type, item) {
+    if (type === "vlans") return addVlanDef(item.num, item.name) ? true : null;
+    if (hasRef(type, item.id)) return null;
+    var tags = [];
+    if (type === "devices") {
+      tags = item.vlans.map(invVlanNum).filter(Boolean);
+    } else if (type === "services" && item.vlan) {
+      tags = [invVlanNum(item.vlan)].filter(Boolean);
     }
-    inventory.devices.forEach(function (d) {
-      var dn = findRef("devices", d.id);
-      d.vlans.forEach(function (v) { connect(dn, findRef("vlans", v)); });
-    });
-    inventory.services.forEach(function (s) {
-      var sn = findRef("services", s.id);
-      if (s.host && findRef("devices", s.host)) connect(sn, findRef("devices", s.host));
-      else if (s.vlan) connect(sn, findRef("vlans", s.vlan));
-    });
+    tags = tags.slice(0, MAX_NODE_VLANS);
+    tags.forEach(function (num) { addVlanDef(num, invVlanName(num)); });
+    var kind = type === "services" ? "service" : item.kind || "server";
+    var n = addNode(kind, item.label, { type: type, id: item.id }, TIER_Y + (kindMap[kind] ? kindMap[kind].tier : 3) * TIER_STEP);
+    if (item.detail) n.detail = item.detail.slice(0, MAX_LABEL);
+    if (tags.length) n.vlans = tags.sort(function (a, b) { return a - b; });
+    return n;
+  }
 
-    // Device-to-switch connections become one link per device/switch pair,
-    // labeled "Trunk: 10,30 (native 1)" or "Access: 10" and colored by mode.
-    // Several cables between the same pair share a link with combined labels.
+  function connect(a, b, style) {
+    if (!a || !b) return null;
+    var exists = links.some(function (l) {
+      return (l.from === a.id && l.to === b.id) || (l.from === b.id && l.to === a.id);
+    });
+    if (exists) return null;
+    var l = addLink(a.id, b.id);
+    if (l && style) l.style = style;
+    return l;
+  }
+
+  // Services get a dashed logical link to their host device. Device-to-switch
+  // connections become one physical link per pair, labeled
+  // "Trunk: 10,30 (native 1)" or "Access: 10" and colored by mode. Several
+  // cables between the same pair share a link with combined labels.
+  function linkInventory() {
+    inventory.services.forEach(function (sv) {
+      var sn = findRef("services", sv.id);
+      if (sn && sv.host && findRef("devices", sv.host)) connect(sn, findRef("devices", sv.host), "logical");
+    });
     var pairs = {};
     inventory.connections.forEach(function (c) {
       var k = c.device + ":" + c.switch;
@@ -550,7 +824,13 @@
     var n = addInventoryNode(type, item);
     if (!n) { setStatus("Already on the diagram."); return; }
     linkInventory();
-    select({ type: "node", id: n.id });
+    if (n === true) {
+      setStatus("Added " + chipText(item.num) + " to the VLAN tags. Tick it on a device to show it there.");
+      syncProps();
+      render();
+    } else {
+      select({ type: "node", id: n.id });
+    }
   });
 
   $("btn-inv-all").addEventListener("click", function () {
@@ -559,9 +839,213 @@
       inventory[type].forEach(function (it) { if (addInventoryNode(type, it)) added++; });
     });
     linkInventory();
-    setStatus(added ? "Imported " + added + " item(s). Drag to arrange, then save." : "Everything is already on the diagram.");
+    var anchored = autoLayout();
+    setStatus(added ? "Imported " + added + " item(s)" + (anchored ? " and added an Internet node" : "") +
+      " in tiers, top to bottom. Drag to fine-tune, then save." : "Everything is already on the diagram.");
+    syncProps();
     render();
   });
+
+  // ---- layout: top-to-bottom tiers with an Internet anchor ----------------
+  // Adds an Internet node above the edge gear when the diagram has none, so a
+  // reader has a starting point. Returns true when it added one.
+  function ensureInternet() {
+    if (nodes.some(function (n) { return n.kind === "internet"; })) return false;
+    var deg = {};
+    links.forEach(function (l) { deg[l.from] = (deg[l.from] || 0) + 1; deg[l.to] = (deg[l.to] || 0) + 1; });
+    function best(kind) {
+      var c = nodes.filter(function (n) { return n.kind === kind; });
+      c.sort(function (a, b) { return (deg[b.id] || 0) - (deg[a.id] || 0); });
+      return c[0] || null;
+    }
+    var edge = best("firewall") || best("router");
+    if (!edge) return false;
+    var net = addNode("internet", "Internet", null, TIER_Y);
+    var l = addLink(net.id, edge.id);
+    if (l) l.label = "WAN";
+    return true;
+  }
+
+  // Tiers come from each node type (internet, edge gear, switches, hosts,
+  // services). Within a tier, nodes are ordered by where their neighbors sit to
+  // keep lines short; long tiers wrap onto extra rows.
+  function autoLayout() {
+    var anchored = ensureInternet();
+    if (!nodes.length) return anchored;
+    // Services are laid out separately, in a grid under their host, so a device
+    // running 10+ of them stays readable.
+    var svcNodes = nodes.filter(function (n) { return n.kind === "service"; });
+    var tiers = {};
+    nodes.forEach(function (n) {
+      if (n.kind !== "service") (tiers[tierOf(n)] = tiers[tierOf(n)] || []).push(n);
+    });
+    var keys = Object.keys(tiers).map(Number).sort(function (a, b) { return a - b; });
+    keys.forEach(function (t) { tiers[t].sort(function (a, b) { return a.x - b.x; }); });
+
+    var adj = {};
+    links.forEach(function (l) {
+      var a = byId(nodes, l.from), b = byId(nodes, l.to);
+      if (!a || !b || a.kind === "service" || b.kind === "service") return;
+      (adj[l.from] = adj[l.from] || []).push(l.to);
+      (adj[l.to] = adj[l.to] || []).push(l.from);
+    });
+    var pos = {};
+    function indexTiers() {
+      keys.forEach(function (t) {
+        tiers[t].forEach(function (n, i) { pos[n.id] = (i + 0.5) / tiers[t].length; });
+      });
+    }
+    function sweep(order) {
+      order.forEach(function (t) {
+        var bary = {};
+        tiers[t].forEach(function (n) {
+          var nb = (adj[n.id] || []).filter(function (id) { var m = byId(nodes, id); return m && tierOf(m) !== t; });
+          bary[n.id] = nb.length ? nb.reduce(function (s, id) { return s + pos[id]; }, 0) / nb.length : pos[n.id];
+        });
+        tiers[t].sort(function (a, b) { return bary[a.id] - bary[b.id]; });
+        tiers[t].forEach(function (n, i) { pos[n.id] = (i + 0.5) / tiers[t].length; });
+      });
+    }
+    indexTiers();
+    for (var i = 0; i < 3; i++) { sweep(keys.slice()); sweep(keys.slice().reverse()); }
+
+    var GAPX = 50, GAPY = 90, MAXW = 1800;
+    var rows = [];
+    keys.forEach(function (t) {
+      var cur = [], curW = 0;
+      tiers[t].forEach(function (n) {
+        var w = nodeW(n);
+        if (cur.length && curW + GAPX + w > MAXW) { rows.push(cur); cur = []; curW = 0; }
+        curW += (cur.length ? GAPX : 0) + w;
+        cur.push(n);
+      });
+      if (cur.length) rows.push(cur);
+    });
+    function rowW(r) { return r.reduce(function (s, n, i) { return s + (i ? GAPX : 0) + nodeW(n); }, 0); }
+    var widest = rows.reduce(function (m, r) { return Math.max(m, rowW(r)); }, 0);
+    var mid = Math.max(widest + 80, 1000) / 2;
+    var y = TIER_Y;
+    rows.forEach(function (r) {
+      var x = mid - rowW(r) / 2;
+      var h = 0;
+      r.forEach(function (n) {
+        n.x = Math.max(40, snap(x));
+        n.y = snap(y);
+        x += nodeW(n) + GAPX;
+        h = Math.max(h, nodeH(n));
+      });
+      y += h + GAPY;
+    });
+    placeServices(svcNodes, y);
+    setDirty(true);
+    return anchored;
+  }
+
+  // Each host's services form a block (up to 4 columns) centered under it;
+  // blocks are packed left to right and wrap to a new band when the row is full.
+  function placeServices(list, y0) {
+    if (!list.length) return;
+    var COLS = 4, GX = 30, GY = 24, BLOCK_GAP = 60, ROW_MAX = 2200;
+    var groups = {}, blocks = [], loose = [];
+    list.forEach(function (sv) {
+      var host = null;
+      links.forEach(function (l) {
+        if (host || (l.from !== sv.id && l.to !== sv.id)) return;
+        var o = byId(nodes, l.from === sv.id ? l.to : l.from);
+        if (o && o.kind !== "service" && o.kind !== "vlan") host = o;
+      });
+      if (host) (groups[host.id] = groups[host.id] || { host: host, items: [] }).items.push(sv);
+      else loose.push(sv);
+    });
+    Object.keys(groups).forEach(function (k) { blocks.push(groups[k]); });
+    blocks.sort(function (a, b) { return a.host.x - b.host.x; });
+    if (loose.length) blocks.push({ host: null, items: loose });
+    blocks.forEach(function (b) {
+      b.items.sort(function (p, q) { return p.label.localeCompare(q.label); });
+      b.cols = Math.min(COLS, b.items.length);
+      b.cw = b.items.reduce(function (m, n) { return Math.max(m, nodeW(n)); }, 0);
+      b.rh = b.items.reduce(function (m, n) { return Math.max(m, nodeH(n)); }, 0);
+      b.w = b.cols * b.cw + (b.cols - 1) * GX;
+      b.h = Math.ceil(b.items.length / b.cols) * b.rh + (Math.ceil(b.items.length / b.cols) - 1) * GY;
+    });
+    var x = 40, y = y0, bandH = 0;
+    blocks.forEach(function (b) {
+      var want = b.host ? b.host.x + nodeW(b.host) / 2 - b.w / 2 : x;
+      var bx = Math.max(x, want);
+      if (x > 40 && bx + b.w > ROW_MAX) { y += bandH + GY * 2; bandH = 0; x = 40; bx = Math.max(x, want); }
+      b.items.forEach(function (sv, i) {
+        var c = i % b.cols, r = Math.floor(i / b.cols);
+        sv.x = Math.max(40, snap(bx + c * (b.cw + GX) + (b.cw - nodeW(sv)) / 2));
+        sv.y = snap(y + r * (b.rh + GY));
+      });
+      x = bx + b.w + BLOCK_GAP;
+      bandH = Math.max(bandH, b.h);
+    });
+  }
+
+  $("btn-layout").addEventListener("click", function () {
+    var anchored = autoLayout();
+    setStatus("Arranged top to bottom: Internet → firewall/router → switches → hosts → services." +
+      (anchored ? " Added an Internet node as the starting point." : ""));
+    render();
+  });
+
+  $("btn-labels").addEventListener("click", function () {
+    hideLabels = !hideLabels;
+    setDirty(true);
+    render();
+  });
+
+  // ---- old diagrams: VLANs drawn as boxes ---------------------------------
+  function legacyVlanNodes() { return nodes.filter(function (n) { return n.kind === "vlan"; }); }
+
+  function vlanNumOfNode(n) {
+    if (n.ref && n.ref.type === "vlans") {
+      var num = invVlanNum(n.ref.id);
+      if (num) return num;
+    }
+    var m = /(\d{1,4})/.exec(n.label);
+    var v = m ? Number(m[1]) : 0;
+    return v >= 1 && v <= 4094 ? v : 0;
+  }
+
+  // Each VLAN box becomes a tag on the devices it was linked to, then goes away.
+  function convertVlanNodes() {
+    var done = 0;
+    legacyVlanNodes().forEach(function (vn) {
+      var num = vlanNumOfNode(vn);
+      if (!num) return;
+      var name = vn.label.replace(/^\s*VLAN\s*\d+\s*[-–—:]?\s*/i, "").trim() || invVlanName(num);
+      addVlanDef(num, name);
+      links.forEach(function (l) {
+        if (l.from !== vn.id && l.to !== vn.id) return;
+        var other = byId(nodes, l.from === vn.id ? l.to : l.from);
+        if (!other || other.kind === "vlan") return;
+        var cur = other.vlans || [];
+        if (cur.indexOf(num) < 0 && cur.length < MAX_NODE_VLANS) {
+          other.vlans = cur.concat(num).sort(function (a, b) { return a - b; });
+        }
+      });
+      nodes = nodes.filter(function (n) { return n.id !== vn.id; });
+      links = links.filter(function (l) { return l.from !== vn.id && l.to !== vn.id; });
+      done++;
+    });
+    if (selected && !byId(nodes, selected.id) && !byId(links, selected.id)) selected = null;
+    setDirty(true);
+    setStatus(done ? "Converted " + done + " VLAN box" + (done === 1 ? "" : "es") + " into tags on the devices." : "Could not read a VLAN number from those boxes.", !done);
+    syncProps();
+    render();
+  }
+  $("btn-convert").addEventListener("click", convertVlanNodes);
+
+  function updateLegacyNote() {
+    var n = legacyVlanNodes().length;
+    $("legacy-note").hidden = !n;
+    if (n) {
+      $("legacy-msg").textContent = n + (n === 1 ? " VLAN is" : " VLANs are") +
+        " drawn as a box with lines, which reads like a device you plug into. Tags on the devices show the same thing without implying a cable.";
+    }
+  }
 
   // ---- save / export / share ---------------------------------------------
   function save() {
@@ -569,7 +1053,7 @@
     return fetch("/topologies/" + topoId + "/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: nameInput.value, nodes: nodes, links: links }),
+      body: JSON.stringify({ name: nameInput.value, nodes: nodes, links: links, vlans: vlans, hideLabels: hideLabels }),
     }).then(function (r) {
       if (!r.ok) {
         return r.text().then(function (t) { throw new Error((t || "HTTP " + r.status).trim()); });
