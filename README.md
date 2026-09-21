@@ -12,7 +12,7 @@ It is a web app: one static Go binary plus one SQLite file. No runtime dependenc
 - Automatic revision history: every change is versioned, and each record has a History page showing what changed and when.
 - Light and dark themes: follows your OS setting by default, with a toggle in the nav bar (choice is remembered per browser).
 - Consistent online backup via `-backup`, and a version shown in the page footer.
-- **Network topology designer:** drag-and-drop diagrams (routers, firewalls, switches, servers, VLANs, and more) with labeled links. Add nodes from your inventory (or import it all: a device becomes a switch, router, firewall, etc. node according to its type, network gear goes in its own row, devices are linked to their VLANs and services to their hosts, and each Connection becomes a link labeled like `Trunk: 10,30 (native 1)` or `Access: 20`), then download as SVG or PNG or share a read-only link.
+- **Network topology designer:** drag-and-drop diagrams (routers, firewalls, switches, servers, VLANs, and more) with labeled links. Add nodes from your inventory (or import it all: a device becomes a switch, router, firewall, etc. node according to its type, arranged in tiers under an Internet node, devices carry their VLANs as tags, services are dashed boxes linked to their host, and each Connection becomes a link labeled like `Trunk: 10,30 (native 1)` or `Access: 20`), then download as SVG or PNG or share a read-only link.
 
 Not built yet: full-text search, and Markdown pages and export.
 
@@ -21,8 +21,13 @@ Not built yet: full-text search, and Markdown pages and export.
 Open **Topology** in the nav, create a diagram, and:
 
 - **Add node** places a node of the chosen type. Click it to rename it or change its type, and drag it to move it (positions snap to a grid).
-- **Link mode** connects two nodes: click one, then the other. Click a link to label it, set its **line type** (plain, access = thin green, trunk = thick purple), or delete it. **Delete** also works with the Delete key.
-- **Add from inventory** and **Import all inventory** create nodes from your devices, VLANs, and services. Only names are used, never IP addresses, unless you type them into a label yourself.
+- **Link mode** connects two nodes: click one, then the other. Click a link to label it, set its **line type** (cable, access cable = thin green, trunk cable = thick purple, logical link = dashed grey), or delete it. **Delete** also works with the Delete key.
+- **VLANs are tags, not boxes.** A VLAN is a logical group, not something you plug into, so it is drawn as a colored `VLAN 30` tag on the devices that belong to it. Manage the diagram's VLANs under **VLAN tags** and tick them on a selected device. Old diagrams that draw VLANs as boxes show a **Convert VLAN boxes to tags** button.
+- **Services are dashed.** A service (an app) is not equipment, so its box has a dashed border and connects to the device it runs on with a dashed line; solid lines are always cables. Auto layout puts each device's services in a grid under it, so a host running 10+ services stays readable.
+- **A key on every image.** Exports and the editor show a legend for the line styles, VLAN tag colors, and device types the diagram uses. **Link labels** labels every link (its own label, else its type such as *Trunk* or *Access*; dashed service links are explained by the key instead, so a device with a dozen services is not covered in tags), or turns all labels off, so no link looks undocumented.
+- **Clear device roles.** Device types include Hypervisor node and Storage / NAS as well as Router, Firewall, Switch, and so on, and each box shows a **Model / role** line (filled from the device's Role when imported). Set the device type on the Devices page; devices added before types existed default to Server.
+- **Auto layout** arranges the diagram top to bottom (Internet, then firewall/router, switches, hosts, services) and adds an Internet node above your edge router or firewall if there is none, so a reader knows where to start.
+- **Add from inventory** and **Import all** create nodes from your devices (VLANs become tags; services become dashed boxes linked to their host device) and place them in those tiers. Only names and roles are used, never IP addresses, unless you type them into a label yourself.
 - **Recording links as Connections:** a line in the diagram is only a picture. To keep it in the Connections records, click the link and choose **Record as connection**. It opens the Connections form with the device, switch and mode already filled in, and you add the ports and VLANs. Both ends must be inventory devices: pick a node and set its **Inventory device**, or add it with Add from inventory. A note above the canvas counts links that are not recorded yet, and the panel shows "Recorded in Connections" once they are.
 - **Save** stores the diagram. Each changed save is recorded in the revision log (there is no History page for diagrams yet). **Download SVG/PNG** save first, then export the saved diagram. PNGs are rendered in your browser.
 
@@ -38,12 +43,12 @@ Requires Go 1.25+.
 
 ```bash
 CGO_ENABLED=0 go build -o labdoc ./cmd/labdoc
-./labdoc                      # http://localhost:8080, creates ./homelab.db
+./labdoc                      # http://localhost:5380, creates ./homelab.db
 ```
 
 | Flag | Env | Default | |
 |---|---|---|---|
-| `-addr` | `LABDOC_ADDR` | `:8080` | listen address |
+| `-addr` | `LABDOC_ADDR` | `:5380` | listen address |
 | `-db` | `LABDOC_DB` | `homelab.db` | SQLite file |
 | `-backup PATH` | | | write a consistent copy and exit |
 | `-version` | | | print version and exit |

@@ -20,7 +20,7 @@ const (
 // deviceTypes are the choices for a device's type. The topology designer maps
 // each to a node type in deviceTopoKind (topology.go); keep them in step.
 var deviceTypes = []string{
-	"Server", "PC / Workstation", "Laptop", "NAS",
+	"Server", "Hypervisor node", "PC / Workstation", "Laptop", "NAS",
 	"Switch", "Router", "Firewall", "Access point", "Other",
 }
 
