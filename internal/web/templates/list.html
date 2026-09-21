@@ -5,12 +5,12 @@
 <div class="overflow-auto">
 <table>
   <thead>
-    <tr>{{range .Cols}}<th>{{.Label}}</th>{{end}}<th></th></tr>
+    <tr>{{range .Cols}}<th>{{.Header}}</th>{{end}}<th></th></tr>
   </thead>
   <tbody>
   {{range .Rows}}
     <tr>
-      {{range .Cells}}<td>{{.}}</td>{{end}}
+      {{range .Cells}}<td>{{if .Tags}}{{range .Tags}}<span class="tag tag-{{.Class}}">{{.Text}}</span> {{end}}{{else}}{{.Text}}{{end}}</td>{{end}}
       <td>
         <a href="/{{$.Entity.Key}}/{{.ID}}/edit">Edit</a> ·
         <a href="/{{$.Entity.Key}}/{{.ID}}/history">History</a> ·

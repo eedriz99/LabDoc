@@ -160,7 +160,7 @@ func TestDeviceVLANLinks(t *testing.T) {
 	e := newEnv(t)
 	e.created("/vlans", vlan("10", "Mgmt"))
 	e.created("/vlans", vlan("20", "Servers"))
-	e.created("/devices", url.Values{"name": {"optiplex"}, "vlans": {"1", "2"}})
+	e.created("/devices", url.Values{"name": {"optiplex"}, "type": {"Server"}, "vlans": {"1", "2"}})
 
 	if n := e.count("SELECT count(*) FROM device_vlans WHERE device_id = 1"); n != 2 {
 		t.Fatalf("links = %d, want 2", n)
@@ -170,7 +170,7 @@ func TestDeviceVLANLinks(t *testing.T) {
 		t.Fatal("device list should show linked VLAN labels")
 	}
 
-	e.created("/devices/1", url.Values{"name": {"optiplex"}, "vlans": {"1"}})
+	e.created("/devices/1", url.Values{"name": {"optiplex"}, "type": {"Server"}, "vlans": {"1"}})
 	if n := e.count("SELECT count(*) FROM device_vlans WHERE device_id = 1"); n != 1 {
 		t.Fatalf("links after edit = %d, want 1", n)
 	}
