@@ -16,7 +16,7 @@ func TestOpenAppliesMigrationsIdempotently(t *testing.T) {
 	if err := d.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v < 1 {
 		t.Fatalf("user_version = %d, err = %v; want >= 1", v, err)
 	}
-	for _, table := range []string{"vlans", "devices", "device_vlans", "services", "ip_assignments", "firewall_rules", "pages", "revisions"} {
+	for _, table := range []string{"vlans", "devices", "device_vlans", "services", "ip_assignments", "firewall_rules", "pages", "revisions", "topologies"} {
 		var n int
 		if err := d.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil {
 			t.Errorf("table %s missing: %v", table, err)

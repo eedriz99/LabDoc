@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-`homelab-docs-mvp-requirements.md` is the source of truth for scope, stack, and data model. Build phases 1-3 are done (schema/migrations, CRUD for all entities, automatic revisions plus a per-entity History page). Not built yet: FTS5 search, Markdown pages, Markdown export, topology SVG. License: GPL-3.0.
+`homelab-docs-mvp-requirements.md` is the source of truth for scope, stack, and data model. Build phases 1-3 are done (schema/migrations, CRUD for all entities, automatic revisions plus a per-entity History page), plus dark mode and (v1.0.0) the topology designer. Not built yet: FTS5 search, Markdown pages, Markdown export. License: GPL-3.0.
+
+**Deliberate scope deviation:** the requirements list a drag-and-drop diagram editor as out of MVP scope. The user explicitly asked for a topology designer with shareable/downloadable images, so it was built (interactive editor, server-rendered SVG, browser-rendered PNG, revocable public share links). Everything else in the out-of-scope list still stands.
 
 ## Commands
 
@@ -22,12 +24,19 @@ go build -ldflags "-s -w -X labdoc/internal/version.Version=X.Y.Z" ./cmd/labdoc
 
 Bump `Version` in `internal/version/version.go` with every shipped change (feature = minor, fix = patch) and mention it in the summary. Release tags are `vX.Y.Z`; the SLSA workflow stamps the binary from the tag.
 
+## Documentation
+
+Update `README.md` in the same change whenever build/run commands, flags or env vars, deployment, backup/restore, or user-visible features change.
+
 ## Code layout notes
 
 - `internal/web/entities.go` declares each editable entity (fields, kinds, refs). `crud.go` holds the generic list/form/save/delete/history handlers driven by it. To add an entity, add a migration plus one entry there; templates are generic.
 - The SQLite pool is capped at one connection. Inside a transaction, only use the `tx`; touching `s.db` deadlocks. Read all rows (`queryAll`) before issuing the next query.
 - Validation errors re-render the form with status 200 because htmx does not swap 4xx responses. The UI uses `hx-boost` on `<body>` with full-page handlers.
 - FK cascades (e.g. deleting a VLAN) do not write revisions for the affected child rows.
+- Topology (`internal/web/topology.go`, `static/topology.js`): a diagram is one JSON document in `topologies.layout_json`, validated in `topoPayload.validate` on every save (public share pages render it, so keep that the only write path). `renderTopologySVG` (Go) produces the exported/shared image; `topology.js` draws the same shapes in the editor, so change node size/fonts in both. Node types live in `topoKinds` only. PNG export rasterizes the server SVG in the browser (`static/topology-export.js`).
+- Share links are the only unauthenticated routes (`/share/{token}`, `/share/{token}/image.svg`): 128-bit random token, revocable, `noindex`/`no-referrer`, and the share template must never include app nav or inventory data. Sharing state is not revisioned.
+- The topology editor is opened via `hx-boost="false"` links so its scripts run on a full page load (the rest of the UI is htmx-boosted).
 
 ## What this is
 
@@ -48,13 +57,13 @@ A single-operator homelab documentation tool: one system of record for devices, 
 - **Revisions are automatic**: every create/update/delete of any entity writes a `Revision` (`entity_type`, `entity_id`, `snapshot_json`, `changed_at`, `note`). Never add manual changelog tables. All writes must go through a path that records a revision, so a per-entity History tab can diff snapshots.
 - **Search**: SQLite `FTS5` index over devices, services, and pages; a single global search box (highest-value feature).
 - **Markdown export**: one action renders all tables + pages into a single `.md` matching the existing document format.
-- **Topology diagram**: one static SVG generated server-side from VLAN/device data; not an editor.
+- **Topology diagram**: originally a static auto-generated SVG; now an interactive designer (see Code layout notes). The exported image is still server-rendered SVG.
 - **Deployment**: single binary + systemd unit in an LXC behind Nginx Proxy Manager; auth is Cloudflare Access or one shared-password middleware only. Backup is just copying `homelab.db`.
 
 ## Explicitly out of scope for the MVP
 
-Resist these: multi-user/RBAC, real-time collaboration, drag-and-drop diagram editor, SNMP/polling/auto-discovery, plugin system, external DB, WYSIWYG editor, mobile app, custom auth system, PDF generation (stretch only).
+Resist these: multi-user/RBAC, real-time collaboration, SNMP/polling/auto-discovery, plugin system, external DB, WYSIWYG editor, mobile app, custom auth system, PDF generation (stretch only).
 
 ## Build order
 
-1. Schema + migrations + skeleton → 2. CRUD (devices/VLANs/services/IPs/firewall) → 3. Auto revisions → 4. FTS5 search → 5. Markdown pages + export → 6. Topology SVG → 7. Stretch (PDF, tags, comments).
+1. Schema + migrations + skeleton → 2. CRUD (devices/VLANs/services/IPs/firewall) → 3. Auto revisions → 4. FTS5 search → 5. Markdown pages + export → 6. Topology SVG (done, as a designer in v1.0.0) → 7. Stretch (PDF, tags, comments).

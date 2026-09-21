@@ -4,6 +4,31 @@ A single-operator homelab documentation tool: one system of record for devices, 
 
 It is a web app: one static Go binary plus one SQLite file. No runtime dependencies, no Node, no external database.
 
+## Features
+
+- Create, edit, and delete devices, VLANs, services, IP assignments, and firewall rules from the browser.
+- Automatic revision history: every change is versioned, and each record has a History page showing what changed and when.
+- Light and dark themes: follows your OS setting by default, with a toggle in the nav bar (choice is remembered per browser).
+- Consistent online backup via `-backup`, and a version shown in the page footer.
+- **Network topology designer:** drag-and-drop diagrams (routers, firewalls, switches, servers, VLANs, and more) with labeled links. Add nodes from your inventory (or import it all, with devices linked to their VLANs and services to their hosts), then download as SVG or PNG or share a read-only link.
+
+Not built yet: full-text search, and Markdown pages and export.
+
+## Topology designer
+
+Open **Topology** in the nav, create a diagram, and:
+
+- **Add node** places a node of the chosen type. Click it to rename it or change its type, and drag it to move it (positions snap to a grid).
+- **Link mode** connects two nodes: click one, then the other. Click a link to label or delete it. **Delete** also works with the Delete key.
+- **Add from inventory** and **Import all inventory** create nodes from your devices, VLANs, and services. Only names are used, never IP addresses, unless you type them into a label yourself.
+- **Save** stores the diagram. Each changed save is recorded in the revision log (there is no History page for diagrams yet). **Download SVG/PNG** save first, then export the saved diagram. PNGs are rendered in your browser.
+
+### Sharing a diagram
+
+**Share…** creates a link like `/share/<random token>`. Anyone with the link can view that one diagram, read-only, without signing in. The link exposes only the diagram image, not your inventory or the rest of the app. **Stop sharing** revokes it immediately, and deleting the diagram does too. A new share gets a new token.
+
+Because LabDoc has no login of its own, your reverse proxy or Cloudflare Access is what protects everything else. To make share links work for people outside your network, that layer must let `/share/*` and `/static/*` through without authentication while still protecting all other paths. If you don't want any public link, don't use Share.
+
 ## Build and run
 
 Requires Go 1.25+.
@@ -23,7 +48,7 @@ CGO_ENABLED=0 go build -o labdoc ./cmd/labdoc
 Stamp a release version and cross-compile for a Linux LXC:
 
 ```bash
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X labdoc/internal/version.Version=0.2.0" -o labdoc ./cmd/labdoc
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X labdoc/internal/version.Version=1.0.0" -o labdoc ./cmd/labdoc
 ```
 
 Test and vet: `CGO_ENABLED=0 go vet ./... && CGO_ENABLED=0 go test ./...`. CI runs the same on every push and pull request.
