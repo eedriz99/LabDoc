@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -504,6 +505,31 @@ func TestTopologyEditorOffersServicesButNotVLANBoxes(t *testing.T) {
 	for _, want := range []string{`value="service"`, `value="router"`} {
 		if !strings.Contains(sel, want) {
 			t.Errorf("Add node should offer %s", want)
+		}
+	}
+}
+
+// The editor script looks elements up by id; a template that lost one (for
+// example after a bad merge) leaves the editor throwing on load. Guard the
+// contract between topology.js and topology_edit.html.
+func TestTopologyEditorPageHasEveryElementTheScriptNeeds(t *testing.T) {
+	js, err := staticFS.ReadFile("static/topology.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := newEnv(t)
+	newTopo(e, "Lab")
+	_, page := e.get("/topologies/1")
+	ids := map[string]bool{}
+	for _, m := range regexp.MustCompile(`\$\("([A-Za-z0-9_-]+)"\)`).FindAllStringSubmatch(string(js), -1) {
+		ids[m[1]] = true
+	}
+	if len(ids) < 40 {
+		t.Fatalf("found only %d element ids in topology.js; the pattern is probably wrong", len(ids))
+	}
+	for id := range ids {
+		if !strings.Contains(page, `id="`+id+`"`) {
+			t.Errorf("topology.js uses #%s but the editor page has no such element", id)
 		}
 	}
 }
