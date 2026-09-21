@@ -1,0 +1,102 @@
+name: pr-review-merge
+# Reviews every pull request against main and squash-merges it when the review passes.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: review
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0" # release builds are CGO-free; review the same way
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed on:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -count=1 ./...
+
+      - name: Build and size budget
+        run: |
+          go build -ldflags "-s -w" -o labdoc ./cmd/labdoc
+          size=$(stat -c %s labdoc)
+          echo "binary size: $size bytes"
+          if [ "$size" -gt $((20 * 1024 * 1024)) ]; then
+            echo "::error::binary exceeds the 20 MB budget"
+            exit 1
+          fi
+
+      - name: Version bump
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # CLAUDE.md: every shipped change bumps internal/version/version.go.
+          changed=$(git diff --name-only "$BASE_SHA"...HEAD)
+          if echo "$changed" | grep -Eq '\.(go|sql|html|js|css)$|^go\.(mod|sum)$'; then
+            if ! echo "$changed" | grep -qx 'internal/version/version.go'; then
+              echo "::error::code changed but internal/version/version.go was not bumped"
+              exit 1
+            fi
+          fi
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
+  merge:
+    name: merge
+    needs: review
+    runs-on: ubuntu-latest
+    # Only same-repo PRs (fork PRs get a read-only token) that are not on hold.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !contains(github.event.pull_request.labels.*.name, 'hold')
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Comment review result
+        run: |
+          gh pr comment "$PR" --body "Automated review passed for \`${HEAD_SHA:0:7}\` (gofmt, vet, test, build/size budget, version bump, lint). Merging."
+
+      - name: Squash merge
+        # --match-head-commit refuses to merge if the PR moved after it was reviewed.
+        run: gh pr merge "$PR" --squash --delete-branch --match-head-commit "$HEAD_SHA"

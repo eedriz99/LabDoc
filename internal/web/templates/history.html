@@ -1,6 +1,6 @@
 {{template "head" .}}
-<h2>History: {{.Entity.Singular}} #{{.ID}}</h2>
-<p><a href="/{{.Entity.Key}}">← Back to {{.Entity.Plural}}</a></p>
+<a class="back" href="/{{.Entity.Key}}">{{template "i-back"}}{{.Entity.Plural}}</a>
+<div class="page-head"><h2>History: {{.Entity.Singular}} #{{.ID}}</h2></div>
 {{range .Items}}
   <article>
     <header><strong>{{.Note}}</strong> · <small>{{.At}} UTC</small></header>

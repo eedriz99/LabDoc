@@ -1,15 +1,15 @@
 {{template "head" .}}
-<h2>Topology</h2>
-<p>Design network diagrams, then download them as SVG or PNG or share a read-only link.</p>
+<div class="page-head"><h2>Topology</h2></div>
+<p class="lead">Design network diagrams, then download them as SVG or PNG or share a read-only link.</p>
 {{if .Error}}<p role="alert"><mark>{{.Error}}</mark></p>{{end}}
 <form method="post" action="/topologies" hx-boost="false">
   <fieldset role="group">
     <input type="text" name="name" placeholder="New diagram name" maxlength="80" required>
-    <button type="submit">Create</button>
+    <button type="submit" class="btn-icon">{{template "i-plus"}}Create</button>
   </fieldset>
 </form>
 {{if .Items}}
-<div class="overflow-auto">
+<div class="card overflow-auto">
 <table>
   <thead><tr><th>Name</th><th>Updated (UTC)</th><th>Shared</th><th></th></tr></thead>
   <tbody>
@@ -31,6 +31,6 @@
 </table>
 </div>
 {{else}}
-<p>No diagrams yet.</p>
+<div class="empty"><p>No diagrams yet.</p></div>
 {{end}}
 {{template "foot" .}}
