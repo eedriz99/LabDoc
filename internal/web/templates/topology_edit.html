@@ -1,0 +1,70 @@
+{{template "head" .}}
+<style>
+  #topo .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .75rem; }
+  #topo .toolbar > * { margin: 0; width: auto; }
+  #topo .toolbar button, #topo .toolbar select { padding: .35rem .7rem; font-size: .9rem; }
+  #topo .sep { width: 1px; height: 1.5rem; background: var(--pico-muted-border-color); }
+  #topo [hidden] { display: none !important; }
+  #topo .props { display: flex; flex-wrap: wrap; gap: 1rem; align-items: end; min-height: 3.5rem; margin-bottom: .75rem; }
+  #topo .props label { margin: 0; }
+  #topo .canvas-wrap { overflow: auto; height: 65vh; border: 1px solid var(--pico-muted-border-color); border-radius: .5rem; background: #fff; }
+  #topo svg { display: block; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #topo .node { cursor: grab; }
+  #topo .link { cursor: pointer; }
+  #topo .linking .node { cursor: crosshair; }
+  #topo #share-box { display: flex; gap: .5rem; align-items: center; margin-top: .75rem; }
+  #topo #share-box input { margin: 0; }
+  #status { font-size: .9rem; }
+</style>
+
+<div id="topo" data-id="{{.ID}}" data-share="{{.Token}}">
+  <p><a href="/topologies">← All diagrams</a></p>
+  <label>Diagram name
+    <input type="text" id="t-name" value="{{.Name}}" maxlength="80">
+  </label>
+
+  <div class="toolbar">
+    <select id="new-kind" aria-label="Node type">{{range .Kinds}}<option value="{{.Key}}">{{.Label}}</option>{{end}}</select>
+    <button type="button" id="btn-add">Add node</button>
+    <button type="button" id="btn-link" class="secondary outline" aria-pressed="false">Link mode: off</button>
+    <button type="button" id="btn-del" class="secondary outline">Delete selected</button>
+    <span class="sep"></span>
+    <select id="inv-select" aria-label="Inventory item"></select>
+    <button type="button" id="btn-inv-add" class="secondary outline">Add from inventory</button>
+    <button type="button" id="btn-inv-all" class="secondary outline">Import all inventory</button>
+  </div>
+
+  <div class="toolbar">
+    <button type="button" id="btn-save">Save</button>
+    <button type="button" id="btn-svg" class="secondary outline">Download SVG</button>
+    <button type="button" id="btn-png" class="secondary outline">Download PNG</button>
+    <button type="button" id="btn-share" class="secondary outline">Share…</button>
+    <span id="status" role="status"></span>
+  </div>
+
+  <div class="props" id="props">
+    <span id="props-none"><small>Click a node or link to edit it. Drag nodes to move them.</small></span>
+    <label id="prop-label-wrap" hidden>Label
+      <input type="text" id="prop-label" maxlength="80">
+    </label>
+    <label id="prop-kind-wrap" hidden>Type
+      <select id="prop-kind">{{range .Kinds}}<option value="{{.Key}}">{{.Label}}</option>{{end}}</select>
+    </label>
+  </div>
+
+  <div class="canvas-wrap"><svg id="canvas" width="2000" height="1200" viewBox="0 0 2000 1200" role="img" aria-label="Network diagram editor"></svg></div>
+
+  <div id="share-box" hidden>
+    <input type="text" id="share-url" readonly aria-label="Share link">
+    <button type="button" id="btn-copy" class="secondary outline">Copy</button>
+    <button type="button" id="btn-unshare" class="secondary outline">Stop sharing</button>
+  </div>
+  <p id="share-note" hidden><small>Anyone with this link can view the diagram (read-only), without signing in. Only the image is shared, not your inventory. Stop sharing to revoke it.</small></p>
+</div>
+
+<script type="application/json" id="layout-json">{{.Layout}}</script>
+<script type="application/json" id="kinds-json">{{.Kinds}}</script>
+<script type="application/json" id="inventory-json">{{.Inventory}}</script>
+<script src="/static/topology-export.js"></script>
+<script src="/static/topology.js"></script>
+{{template "foot" .}}
