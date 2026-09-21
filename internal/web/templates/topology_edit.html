@@ -5,26 +5,7 @@
   #topo .name-field input { margin: 0; font-size: 1.25rem; font-weight: 600; }
   #topo .tools { display: flex; flex-wrap: wrap; gap: .9rem 2rem; padding: .9rem 1.1rem; margin-bottom: .5rem; overflow: visible; }
   #topo .tgroup { display: flex; flex-direction: column; align-items: flex-start; width: auto; margin: 0; gap: .4rem; min-width: 0; box-shadow: none; }
-  #topo .chip { display: inline-block; padding: .05rem .5rem; border-radius: 999px; font-size: .72rem; font-weight: 700; color: #fff; white-space: nowrap; }
-  #topo .swatch { display: inline-block; width: .9rem; height: .9rem; border: 2px solid; border-radius: 3px; background: #fff; flex: none; }
-  #topo .legend { display: flex; flex-wrap: wrap; gap: 1rem 3rem; padding: .9rem 1.1rem; margin-top: .75rem; overflow: visible; }
-  #topo .lg-sec { display: flex; flex-direction: column; gap: .35rem; }
-  #topo .lg-row { display: flex; align-items: center; gap: .6rem; font-size: .88rem; }
-  #topo .lg-row svg { flex: none; }
-  #topo .lg-row .icon-btn { margin-left: auto; }
-  #topo .vlan-mgr { padding: .7rem 1.1rem; margin-bottom: .75rem; overflow: visible; }
-  #topo .vlan-mgr summary { cursor: pointer; font-weight: 600; }
-  #topo .vlan-mgr .trow { margin-top: .6rem; }
-  #topo .vlan-mgr #vlan-list { display: flex; flex-direction: column; gap: .3rem; margin-top: .6rem; max-width: 26rem; }
-  #topo .vlan-mgr input { margin: 0; }
-  #topo #vlan-num { width: 7rem; }
-  #topo .vlan-checks { display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
-  #topo .vlan-checks label { margin: 0; display: inline-flex; align-items: center; gap: .3rem; }
-  #topo #prop-vlans-wrap { margin: 0; padding: 0; border: 0; }
-  #topo #prop-vlans-wrap legend { font-size: .85rem; margin-bottom: .2rem; }
-  #topo #legacy-note { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; padding: .7rem 1.1rem; margin-bottom: .75rem; overflow: visible; }
-  #topo #legacy-note button { margin: 0; width: auto; }
-  @media (min-width: 1750px) { #topo .tgroup.push { margin-left: auto; } }
+  @media (min-width: 1300px) { #topo .tgroup.push { margin-left: auto; } }
   #topo .tlabel { font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--pico-muted-color); }
   #topo .trow { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
   #topo .trow > * { margin: 0; width: auto; }
@@ -58,17 +39,10 @@
     <div class="tgroup" role="group" aria-labelledby="g-nodes">
       <span class="tlabel" id="g-nodes">Nodes</span>
       <div class="trow">
-        <select id="new-kind" aria-label="Node type">{{range .Kinds}}{{if not .Legacy}}<option value="{{.Key}}">{{.Label}}</option>{{end}}{{end}}</select>
+        <select id="new-kind" aria-label="Node type">{{range .Kinds}}<option value="{{.Key}}">{{.Label}}</option>{{end}}</select>
         <button type="button" id="btn-add" class="btn-icon">{{template "i-plus"}}Add node</button>
         <button type="button" id="btn-link" class="btn-icon secondary outline" aria-pressed="false">{{template "i-nav" "connections"}}Link mode: <span id="link-state">off</span></button>
         <button type="button" id="btn-del" class="btn-icon secondary outline" title="Delete the selected node or link">{{template "i-trash"}}Delete</button>
-      </div>
-    </div>
-    <div class="tgroup" role="group" aria-labelledby="g-layout">
-      <span class="tlabel" id="g-layout">Layout</span>
-      <div class="trow">
-        <button type="button" id="btn-layout" class="btn-icon secondary outline" title="Arrange top to bottom: Internet, firewall/router, switches, hosts, services. Adds an Internet node if missing.">{{template "i-layout"}}Auto layout</button>
-        <button type="button" id="btn-labels" class="btn-icon secondary outline" title="Label every link, or none, so no link looks undocumented">{{template "i-tag"}}Link labels: <span id="labels-state">on</span></button>
       </div>
     </div>
     <div class="tgroup" role="group" aria-labelledby="g-inv">
@@ -91,27 +65,17 @@
   </div>
   <p id="status" role="status"></p>
   <p id="sync-note" hidden><small></small></p>
-  <p id="legacy-note" class="card" hidden><span id="legacy-msg"></span>
-    <button type="button" id="btn-convert" class="btn-icon">{{template "i-tag"}}Convert VLAN boxes to tags</button></p>
 
   <div class="card props" id="props">
     <span id="props-none"><small>Click a node or link to edit it. Drag nodes to move them.</small></span>
     <label id="prop-label-wrap" hidden>Label
       <input type="text" id="prop-label" maxlength="80">
     </label>
-    <label id="prop-detail-wrap" hidden>Model / role
-      <input type="text" id="prop-detail" maxlength="80" placeholder="e.g. Cisco 3750 switch, Proxmox node">
-    </label>
-    <fieldset id="prop-vlans-wrap" hidden>
-      <legend>VLAN tags</legend>
-      <div id="prop-vlans" class="vlan-checks"></div>
-    </fieldset>
     <label id="prop-style-wrap" hidden>Line type
       <select id="prop-style">
-        <option value="">Cable (VLANs not specified)</option>
-        <option value="access">Access cable (one VLAN)</option>
-        <option value="trunk">Trunk cable (several VLANs)</option>
-        <option value="logical">Logical link (not a cable)</option>
+        <option value="">Plain</option>
+        <option value="access">Access (one VLAN)</option>
+        <option value="trunk">Trunk (tagged VLANs)</option>
       </select>
     </label>
     <label id="prop-ref-wrap" hidden>Inventory device
@@ -126,20 +90,7 @@
     </label>
   </div>
 
-  <details class="card vlan-mgr" id="vlan-mgr">
-    <summary>VLAN tags<span id="vlan-count"></span></summary>
-    <p><small>VLANs are shown as colored tags on devices, not as boxes, because a VLAN is a logical group and not something you plug into. Tag a device by selecting it.</small></p>
-    <div id="vlan-list"></div>
-    <div class="trow">
-      <input type="number" id="vlan-num" min="1" max="4094" placeholder="VLAN #" aria-label="VLAN number">
-      <input type="text" id="vlan-name" maxlength="80" placeholder="Name, e.g. Management" aria-label="VLAN name">
-      <button type="button" id="btn-vlan-add" class="btn-icon secondary outline">{{template "i-plus"}}Add VLAN</button>
-    </div>
-  </details>
-
   <div class="card canvas-wrap"><svg id="canvas" width="2000" height="1200" viewBox="0 0 2000 1200" role="img" aria-label="Network diagram editor"></svg></div>
-
-  <div class="card legend" id="legend" role="group" aria-label="Diagram key" hidden></div>
 
   <div id="share-box" hidden>
     <input type="text" id="share-url" readonly aria-label="Share link">
