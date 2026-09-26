@@ -2,6 +2,9 @@
 *.db-shm
 *.db-wal
 *.claude
+*.exe
+*.exe~
 /labdoc
 /labdoc.exe
+/labdoc.exe~
 /screenshots

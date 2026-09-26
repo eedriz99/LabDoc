@@ -815,13 +815,13 @@ func (s *Server) inventory() (topoInventory, error) {
 	return inv, nil
 }
 
-func (s *Server) renderTopoList(w http.ResponseWriter, errMsg string) {
+func (s *Server) renderTopoList(w http.ResponseWriter, r *http.Request, errMsg string) {
 	rows, err := queryAll(s.db, "SELECT id, name, updated_at, share_token IS NOT NULL FROM topologies ORDER BY name, id")
 	if err != nil {
 		s.fail(w, "list topologies", err)
 		return
 	}
-	page := topoListPage{base: s.newBase("Topology"), Error: errMsg}
+	page := topoListPage{base: s.newBase(r, "Topology"), Error: errMsg}
 	for _, r := range rows {
 		page.Items = append(page.Items, topoItem{ID: toInt(r[0]), Name: str(r[1]), Updated: str(r[2]), Shared: toInt(r[3]) == 1})
 	}
@@ -840,7 +840,7 @@ func (s *Server) mountTopology(r chi.Router) {
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, inv)
 	})
-	r.Get("/topologies", func(w http.ResponseWriter, _ *http.Request) { s.renderTopoList(w, "") })
+	r.Get("/topologies", func(w http.ResponseWriter, r *http.Request) { s.renderTopoList(w, r, "") })
 	r.Post("/topologies", s.topoCreate)
 	r.Get("/topologies/{id}", s.topoEdit)
 	r.Post("/topologies/{id}/save", s.topoSave)
@@ -857,7 +857,7 @@ func (s *Server) mountTopology(r chi.Router) {
 func (s *Server) topoCreate(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.PostFormValue("name"))
 	if name == "" || utf8.RuneCountInString(name) > maxTopoLabel {
-		s.renderTopoList(w, fmt.Sprintf("Name is required (max %d characters)", maxTopoLabel))
+		s.renderTopoList(w, r, fmt.Sprintf("Name is required (max %d characters)", maxTopoLabel))
 		return
 	}
 	tx, err := s.db.Begin()
@@ -905,7 +905,7 @@ func (s *Server) topoEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, "topology_edit.html", topoEditPage{
-		base: s.newBase(t.Name), ID: t.ID, Name: t.Name, Token: t.Token,
+		base: s.newBase(r, t.Name), ID: t.ID, Name: t.Name, Token: t.Token,
 		Layout: json.RawMessage(t.Layout), Kinds: topoKinds, Inventory: inv,
 	})
 }

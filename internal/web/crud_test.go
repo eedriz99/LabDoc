@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
@@ -33,15 +34,23 @@ func newEnv(t *testing.T) *env {
 	}
 	ts := httptest.NewServer(s.Routes())
 	t.Cleanup(ts.Close)
-	return &env{
-		t: t, db: d, url: ts.URL,
-		c: &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
 	}
+	e := &env{
+		t: t, db: d, url: ts.URL,
+		c: &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
+	}
+	// All routes require a session; bootstrap the one-time setup account so
+	// the rest of the suite exercises CRUD behavior as a signed-in operator.
+	e.created("/setup", url.Values{"username": {"tester"}, "password": {"testpassword"}, "confirm": {"testpassword"}})
+	return e
 }
 
-func (e *env) post(path string, form url.Values) (int, string) {
+func (e *env) get(path string) (int, string) {
 	e.t.Helper()
-	resp, err := e.c.PostForm(e.url+path, form)
+	resp, err := e.c.Get(e.url + path)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -50,9 +59,46 @@ func (e *env) post(path string, form url.Values) (int, string) {
 	return resp.StatusCode, string(b)
 }
 
-func (e *env) get(path string) (int, string) {
+// csrfToken returns the CSRF cookie this client already holds, fetching a
+// page first to obtain one if it doesn't (every response sets it; see
+// csrfProtect). Tests that specifically exercise CSRF rejection bypass this
+// via a raw client instead of env's helpers.
+func (e *env) csrfToken() string {
 	e.t.Helper()
-	resp, err := e.c.Get(e.url + path)
+	u, err := url.Parse(e.url)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	find := func() string {
+		for _, c := range e.c.Jar.Cookies(u) {
+			if c.Name == csrfCookie {
+				return c.Value
+			}
+		}
+		return ""
+	}
+	if tok := find(); tok != "" {
+		return tok
+	}
+	if _, _ = e.get("/"); find() == "" {
+		e.t.Fatal("CSRF cookie was not set by the server")
+	}
+	return find()
+}
+
+// post submits form, transparently attaching the CSRF token this client's
+// session already carries (or fetches one first). Tests target the app's
+// actual behavior, not the CSRF layer itself, which auth_test.go covers
+// separately.
+func (e *env) post(path string, form url.Values) (int, string) {
+	e.t.Helper()
+	if form == nil {
+		form = url.Values{}
+	}
+	if form.Get("csrf_token") == "" {
+		form.Set("csrf_token", e.csrfToken())
+	}
+	resp, err := e.c.PostForm(e.url+path, form)
 	if err != nil {
 		e.t.Fatal(err)
 	}

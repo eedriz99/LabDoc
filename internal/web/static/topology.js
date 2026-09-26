@@ -6,6 +6,13 @@
   var root = document.getElementById("topo");
   if (!root) return;
 
+  // These calls bypass htmx (plain fetch), so, unlike the rest of the UI,
+  // they must attach the CSRF header themselves; see layout.html's meta tag.
+  function csrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : "";
+  }
+
   var NS = "http://www.w3.org/2000/svg";
   var W = 2000, H = 1200, NODE_H = 56, DETAIL_H = 16, CHIP_ROW_H = 20, GRID = 10, MAX_LABEL = 80, MAX_NODE_VLANS = 6;
   var cw = W, ch = H; // current canvas size; grows with the diagram
@@ -1052,7 +1059,7 @@
     setStatus("Saving…");
     return fetch("/topologies/" + topoId + "/save", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
       body: JSON.stringify({ name: nameInput.value, nodes: nodes, links: links, vlans: vlans, hideLabels: hideLabels }),
     }).then(function (r) {
       if (!r.ok) {
@@ -1093,14 +1100,14 @@
   showShare();
 
   $("btn-share").addEventListener("click", function () {
-    fetch("/topologies/" + topoId + "/share", { method: "POST" })
+    fetch("/topologies/" + topoId + "/share", { method: "POST", headers: { "X-CSRF-Token": csrfToken() } })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
       .then(function (d) { shareToken = d.token; showShare(); $("share-url").select(); })
       .catch(function (e) { setStatus("Could not share: " + e.message, true); });
   });
 
   $("btn-unshare").addEventListener("click", function () {
-    fetch("/topologies/" + topoId + "/unshare", { method: "POST" })
+    fetch("/topologies/" + topoId + "/unshare", { method: "POST", headers: { "X-CSRF-Token": csrfToken() } })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); })
       .then(function () { shareToken = ""; showShare(); setStatus("Sharing stopped; the old link no longer works."); })
       .catch(function (e) { setStatus("Could not stop sharing: " + e.message, true); });

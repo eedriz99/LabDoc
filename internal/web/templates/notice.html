@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{.Title}} · LabDoc</title>
+  <script>
+    try {
+      var t = localStorage.getItem("theme");
+      if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="/static/pico.min.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="auth-body">
+  <main class="auth-main">
+    <div class="card form-card auth-card">
+      <div class="brand auth-brand">{{template "i-logo"}}LabDoc</div>
+      <div class="page-head"><h2>{{.Title}}</h2></div>
+      <p>{{.Message}}</p>
+      <div class="form-actions"><a role="button" class="btn-icon" href="{{.LinkHref}}">{{.LinkText}}</a></div>
+    </div>
+  </main>
+</body>
+</html>

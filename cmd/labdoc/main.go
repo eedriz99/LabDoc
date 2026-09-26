@@ -17,6 +17,11 @@ func main() {
 	dbPath := flag.String("db", envOr("LABDOC_DB", "homelab.db"), "SQLite database path")
 	backup := flag.String("backup", "", "write a consistent copy of the database to this path and exit")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	smtpHost := flag.String("smtp-host", envOr("LABDOC_SMTP_HOST", ""), "SMTP server for outgoing email (blank disables email verification / password reset)")
+	smtpPort := flag.String("smtp-port", envOr("LABDOC_SMTP_PORT", "587"), "SMTP server port (587/STARTTLS; implicit-TLS 465 is not supported)")
+	smtpUsername := flag.String("smtp-username", envOr("LABDOC_SMTP_USERNAME", ""), "SMTP username")
+	smtpPassword := flag.String("smtp-password", envOr("LABDOC_SMTP_PASSWORD", ""), "SMTP password")
+	smtpFrom := flag.String("smtp-from", envOr("LABDOC_SMTP_FROM", ""), "From address for outgoing email")
 	flag.Parse()
 
 	if *showVersion {
@@ -42,6 +47,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("init web: %v", err)
 	}
+	srv.SetMail(web.MailConfig{
+		Host: *smtpHost, Port: *smtpPort, Username: *smtpUsername, Password: *smtpPassword, From: *smtpFrom,
+	})
 
 	log.Printf("listening on %s (db: %s)", *addr, *dbPath)
 	log.Fatal(http.ListenAndServe(*addr, srv.Routes()))
