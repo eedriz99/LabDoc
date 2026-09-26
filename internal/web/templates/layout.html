@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{.CSRFToken}}">
   <title>{{.Title}} · LabDoc</title>
   <script>
     // Apply a saved theme before first paint to avoid a light flash. With no
@@ -16,6 +17,13 @@
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js" defer></script>
   <script>
+    // htmx intercepts hx-boost forms/links too, so this covers every write
+    // the UI makes (including hx-post delete links, which carry no form
+    // field of their own) with the CSRF token this page was rendered with.
+    document.addEventListener("htmx:configRequest", function (ev) {
+      var meta = document.querySelector('meta[name="csrf-token"]');
+      if (meta && meta.content) ev.detail.headers["X-CSRF-Token"] = meta.content;
+    });
     // Delegated so it keeps working after hx-boost swaps the body.
     document.addEventListener("click", function (ev) {
       if (!ev.target.closest("#theme-toggle")) return;
@@ -26,18 +34,45 @@
       root.setAttribute("data-theme", next);
       try { localStorage.setItem("theme", next); } catch (e) {}
     });
-    // Mark the current section in the nav; re-run after hx-boost swaps the body.
+    // Mark the current section in the nav, including a dropdown's summary
+    // when one of its own entries is current. Re-run after hx-boost swaps
+    // the body (which also resets any open dropdown, since it's part of
+    // what gets swapped).
     function markNav() {
       var path = location.pathname;
-      document.querySelectorAll(".navlink").forEach(function (a) {
-        var href = a.getAttribute("href");
-        var on = href === "/" ? path === "/" : path === href || path.indexOf(href + "/") === 0;
-        if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+      function isOn(href) {
+        return href && (href === "/" ? path === "/" : path === href || path.indexOf(href + "/") === 0);
+      }
+      document.querySelectorAll(".navlink, .navmenu-link").forEach(function (a) {
+        if (isOn(a.getAttribute("href"))) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+      });
+      document.querySelectorAll(".navgroup").forEach(function (d) {
+        var summary = d.querySelector("summary");
+        if (d.querySelector('.navmenu-link[aria-current="page"]')) summary.setAttribute("aria-current", "page");
+        else summary.removeAttribute("aria-current");
       });
     }
     document.addEventListener("DOMContentLoaded", markNav);
     document.addEventListener("htmx:afterSettle", markNav);
     window.addEventListener("popstate", function () { setTimeout(markNav, 0); });
+    // Nav dropdowns: plain <details>/<summary>, so this only adds the
+    // conveniences the native element doesn't (accordion, close on an
+    // outside click or a menu choice, close on Escape).
+    document.addEventListener("toggle", function (ev) {
+      if (!ev.target.matches(".navgroup") || !ev.target.open) return;
+      document.querySelectorAll(".navgroup[open]").forEach(function (d) {
+        if (d !== ev.target) d.removeAttribute("open");
+      });
+    }, true); // toggle doesn't bubble; capture it on the way down instead.
+    document.addEventListener("click", function (ev) {
+      document.querySelectorAll(".navgroup[open]").forEach(function (d) {
+        if (!d.contains(ev.target) || ev.target.closest(".navmenu-link")) d.removeAttribute("open");
+      });
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Escape") return;
+      document.querySelectorAll(".navgroup[open]").forEach(function (d) { d.removeAttribute("open"); });
+    });
   </script>
 </head>
 <body hx-boost="true">
@@ -45,8 +80,31 @@
     <nav class="topbar" aria-label="Main">
       <a class="brand" href="/">{{template "i-logo"}}LabDoc</a>
       <ul class="navlinks">
-        {{range .Nav}}<li><a class="navlink" href="/{{.Key}}" title="{{.Plural}}">{{template "i-nav" .Key}}<span class="navtext">{{.Plural}}</span></a></li>{{end}}
+        <li>
+          <details class="navgroup">
+            <summary class="navlink" role="button" aria-haspopup="menu" title="Inventory">{{template "i-db"}}<span class="navtext">Inventory</span>{{template "i-caret"}}</summary>
+            <ul class="navmenu" role="menu">
+              {{range .Nav}}<li role="none"><a class="navmenu-link" role="menuitem" href="/{{.Key}}">{{template "i-nav" .Key}}{{.Plural}}</a></li>{{end}}
+            </ul>
+          </details>
+        </li>
         <li><a class="navlink" href="/topologies" title="Topology">{{template "i-nav" "topology"}}<span class="navtext">Topology</span></a></li>
+        {{if .User}}
+        <li>
+          <details class="navgroup">
+            <summary class="navlink" role="button" aria-haspopup="menu" title="Account ({{.User.Username}})">{{template "i-user"}}<span class="navtext">{{.User.Username}}</span>{{template "i-caret"}}</summary>
+            <ul class="navmenu navmenu-end" role="menu">
+              <li role="none"><a class="navmenu-link" role="menuitem" href="/account">{{template "i-user"}}Account</a></li>
+              <li role="none">
+                <form method="post" action="/logout">
+                  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                  <button type="submit" class="navmenu-link" role="menuitem">{{template "i-logout"}}Log out</button>
+                </form>
+              </li>
+            </ul>
+          </details>
+        </li>
+        {{end}}
       </ul>
       <button type="button" id="theme-toggle" class="secondary outline btn-icon" aria-label="Toggle dark mode" title="Toggle dark mode">
         <span class="to-dark">{{template "i-moon"}}</span><span class="to-light">{{template "i-sun"}}</span>
@@ -82,3 +140,6 @@
 {{define "i-x"}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>{{end}}
 {{define "i-layout"}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="9" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v5M5 17v-5h14v5M12 12v5"/></svg>{{end}}
 {{define "i-tag"}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>{{end}}
+{{define "i-user"}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>{{end}}
+{{define "i-caret"}}<svg class="icon nav-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>{{end}}
+{{define "i-logout"}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg>{{end}}

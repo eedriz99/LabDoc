@@ -24,8 +24,10 @@ type queryer interface {
 }
 
 type base struct {
-	Title string
-	Nav   []*Entity
+	Title     string
+	Nav       []*Entity
+	User      *authUser
+	CSRFToken string
 }
 
 // listTag is one highlighted badge (e.g. SSD, HDD) inside a list cell.
@@ -87,7 +89,12 @@ type indexPage struct {
 
 var errNotFound = errors.New("not found")
 
-func (s *Server) newBase(title string) base { return base{Title: title, Nav: entities} }
+func (s *Server) newBase(r *http.Request, title string) base {
+	return base{
+		Title: title, Nav: entities,
+		User: userFromContext(r.Context()), CSRFToken: csrfFromContext(r.Context()),
+	}
+}
 
 func (s *Server) fail(w http.ResponseWriter, what string, err error) {
 	log.Printf("%s: %v", what, err)
@@ -372,7 +379,7 @@ func (s *Server) choices(e *Entity, values map[string]string, multi map[string][
 	return out, nil
 }
 
-func (s *Server) renderForm(w http.ResponseWriter, e *Entity, id int64, values map[string]string, multi map[string][]string, errMsg string) {
+func (s *Server) renderForm(w http.ResponseWriter, r *http.Request, e *Entity, id int64, values map[string]string, multi map[string][]string, errMsg string) {
 	ch, err := s.choices(e, values, multi)
 	if err != nil {
 		s.fail(w, "choices", err)
@@ -383,7 +390,7 @@ func (s *Server) renderForm(w http.ResponseWriter, e *Entity, id int64, values m
 		title, action = "Edit "+e.Singular, "/"+e.Key+"/"+strconv.FormatInt(id, 10)
 	}
 	s.render(w, "form.html", formPage{
-		base: s.newBase(title), Entity: e, ID: id, Action: action,
+		base: s.newBase(r, title), Entity: e, ID: id, Action: action,
 		Error: errMsg, Values: values, Choices: ch,
 	})
 }
@@ -396,13 +403,13 @@ func idParam(r *http.Request) (int64, bool) {
 func (s *Server) mountCRUD(r chi.Router, e *Entity) {
 	base := "/" + e.Key
 
-	r.Get(base, func(w http.ResponseWriter, _ *http.Request) {
+	r.Get(base, func(w http.ResponseWriter, r *http.Request) {
 		rows, err := queryAll(s.db, e.listSQL())
 		if err != nil {
 			s.fail(w, "list "+e.Key, err)
 			return
 		}
-		page := listPage{base: s.newBase(e.Plural), Entity: e, Cols: e.listFields()}
+		page := listPage{base: s.newBase(r, e.Plural), Entity: e, Cols: e.listFields()}
 		for _, row := range rows {
 			id, _ := strconv.ParseInt(str(row[0]), 10, 64)
 			lr := listRow{ID: id}
@@ -432,7 +439,7 @@ func (s *Server) mountCRUD(r chi.Router, e *Entity) {
 				values[f.Name] = v
 			}
 		}
-		s.renderForm(w, e, 0, values, nil, "")
+		s.renderForm(w, r, e, 0, values, nil, "")
 	})
 
 	r.Get(base+"/{id}/edit", func(w http.ResponseWriter, r *http.Request) {
@@ -460,7 +467,7 @@ func (s *Server) mountCRUD(r chi.Router, e *Entity) {
 				values[f.Name] = str(snap[f.Name])
 			}
 		}
-		s.renderForm(w, e, id, values, multi, "")
+		s.renderForm(w, r, e, id, values, multi, "")
 	})
 
 	save := func(w http.ResponseWriter, r *http.Request) {
@@ -501,7 +508,7 @@ func (s *Server) mountCRUD(r chi.Router, e *Entity) {
 		}
 		if err != nil {
 			// 200, not 4xx: htmx does not swap error responses by default.
-			s.renderForm(w, e, id, values, multi, friendlyErr(e, err))
+			s.renderForm(w, r, e, id, values, multi, friendlyErr(e, err))
 			return
 		}
 		http.Redirect(w, r, base, http.StatusSeeOther)
@@ -535,7 +542,7 @@ func (s *Server) mountCRUD(r chi.Router, e *Entity) {
 			return
 		}
 		s.render(w, "history.html", historyPage{
-			base: s.newBase("History"), Entity: e, ID: id, Items: items,
+			base: s.newBase(r, "History"), Entity: e, ID: id, Items: items,
 		})
 	})
 }

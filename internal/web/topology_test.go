@@ -10,13 +10,21 @@ import (
 	"testing"
 )
 
+// postJSON posts a JSON body, attaching the CSRF token as a header since a
+// JSON body has nowhere to carry the usual hidden form field.
 func (e *env) postJSON(path string, v any) (int, string) {
 	e.t.Helper()
 	b, err := json.Marshal(v)
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	resp, err := e.c.Post(e.url+path, "application/json", strings.NewReader(string(b)))
+	req, err := http.NewRequest(http.MethodPost, e.url+path, strings.NewReader(string(b)))
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(csrfHeader, e.csrfToken())
+	resp, err := e.c.Do(req)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -57,7 +65,7 @@ func newTopo(e *env, name string) {
 func TestTopologyLifecycleAndRevisions(t *testing.T) {
 	e := newEnv(t)
 
-	resp, err := e.c.PostForm(e.url+"/topologies", url.Values{"name": {"Home Lab"}})
+	resp, err := e.c.PostForm(e.url+"/topologies", url.Values{"name": {"Home Lab"}, "csrf_token": {e.csrfToken()}})
 	if err != nil {
 		t.Fatal(err)
 	}

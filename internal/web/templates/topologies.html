@@ -3,6 +3,7 @@
 <p class="lead">Design network diagrams, then download them as SVG or PNG or share a read-only link.</p>
 {{if .Error}}<p role="alert"><mark>{{.Error}}</mark></p>{{end}}
 <form method="post" action="/topologies" hx-boost="false">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
   <fieldset role="group">
     <input type="text" name="name" placeholder="New diagram name" maxlength="80" required>
     <button type="submit" class="btn-icon">{{template "i-plus"}}Create</button>

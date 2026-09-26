@@ -1,0 +1,90 @@
+{{template "head" .}}
+<div class="page-head"><h2>Account</h2></div>
+{{if .Notice}}<p role="status"><ins>{{.Notice}}</ins></p>{{end}}
+{{if .Error}}<p role="alert"><mark>{{.Error}}</mark></p>{{end}}
+
+<div class="card form-card">
+  <h3>Change your password</h3>
+  <form method="post" action="/account/password">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Current password
+      <input type="password" name="current_password" autocomplete="current-password" required>
+    </label>
+    <label>New password
+      <input type="password" name="new_password" autocomplete="new-password" required minlength="10">
+    </label>
+    <label>Confirm new password
+      <input type="password" name="confirm" autocomplete="new-password" required minlength="10">
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="btn-icon">{{template "i-check"}}Update password</button>
+    </div>
+  </form>
+</div>
+
+<div class="card form-card">
+  <h3>Password reset email</h3>
+  <p><small>Optional. Once verified, this address can be used to reset your password from the login page if you forget it.</small></p>
+  {{if not .MailConfigured}}
+  <p role="alert"><mark>Outgoing email isn't configured on this server, so this can't be verified yet; ask the administrator to set the SMTP flags.</mark></p>
+  {{else if .EmailVerified}}
+  <p><ins>{{.Email}}</ins> — verified.</p>
+  {{else if .EmailPending}}
+  <p>{{.Email}} — verification sent, not yet confirmed. Check your inbox, or resubmit below to send a new link.</p>
+  {{end}}
+  <form method="post" action="/account/email">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Email
+      <input type="email" name="email" value="{{.Email}}" autocomplete="email">
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="btn-icon">{{template "i-check"}}Save email</button>
+    </div>
+  </form>
+</div>
+
+<div class="card form-card">
+  <h3>Accounts</h3>
+  <table>
+    <thead><tr><th>Username</th><th>Created</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+    <tbody>
+      {{range .Users}}
+      <tr>
+        <td>{{.Username}}{{if .Self}} <small>(you)</small>{{end}}</td>
+        <td>{{.Created}}</td>
+        <td>
+          {{if not .Self}}
+          <form method="post" action="/account/users/{{.ID}}/delete" hx-confirm="Remove the account &quot;{{.Username}}&quot;?">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button type="submit" class="secondary outline btn-icon">{{template "i-trash"}}Remove</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <h4>Add another account</h4>
+  <p><small>Every account has equal access; there are no roles.</small></p>
+  <form method="post" action="/account/users">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Username
+      <input type="text" name="username" autocomplete="username" required>
+    </label>
+    <label>Password
+      <input type="password" name="password" autocomplete="new-password" required minlength="10">
+    </label>
+    <label>Confirm password
+      <input type="password" name="confirm" autocomplete="new-password" required minlength="10">
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="btn-icon">{{template "i-plus"}}Add account</button>
+    </div>
+  </form>
+</div>
+
+<form method="post" action="/logout">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <button type="submit" class="secondary outline btn-icon">{{template "i-logout"}}Log out</button>
+</form>
+{{template "foot" .}}

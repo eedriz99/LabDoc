@@ -3,6 +3,7 @@
 <div class="page-head"><h2>{{.Title}}</h2></div>
 {{if .Error}}<p role="alert"><mark>{{.Error}}</mark></p>{{end}}
 <form method="post" action="{{.Action}}" class="card form-card">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
   {{range .Entity.Fields}}{{$f := .}}
     {{if eq .Kind "textarea"}}
       <label>{{.Label}}

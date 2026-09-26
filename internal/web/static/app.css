@@ -139,14 +139,14 @@ main article ul { margin: 0; padding: .6rem 1.1rem .6rem 2.2rem; }
 .tag-trunk { background: #7c3aed; }
 .tag-access { background: #15803d; }
 
-/* Once the labelled links can't shrink any further, drop the text and keep icons (still single row). */
+/* Once the labelled links can't shrink any further, drop the text and keep icons (still single row).
+   Nav tabs are grouped into a couple of dropdowns (see below), so there are only ever
+   a few top-level items now; no horizontal-scroll fallback needed for it any more. */
 @media (max-width: 1000px) {
   .navtext { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .navlinks { gap: .3rem; }
   .navlink { padding: .6em .7em; }
   .navlink .icon { width: 1.3rem; height: 1.3rem; }
-  .navlinks { overflow-x: auto; scrollbar-width: none; }
-  .navlinks::-webkit-scrollbar { display: none; }
 }
 @media (max-width: 520px) {
   .brand { font-size: 0; gap: 0; }  /* logo only */
@@ -161,3 +161,30 @@ main article ul { margin: 0; padding: .6rem 1.1rem .6rem 2.2rem; }
 
 .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
                    clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ---- Nav dropdowns: grouped tabs (Inventory, the user menu), native <details>/<summary> ---- */
+.navgroup { position: relative; }
+.navgroup > summary { list-style: none; }
+.navgroup > summary::-webkit-details-marker { display: none; } /* Safari's default triangle */
+.navgroup[open] > summary { color: var(--pico-color); background: color-mix(in srgb, var(--pico-color) 8%, transparent); }
+.nav-caret { width: .8em; height: .8em; margin-left: -.1em; transition: transform .15s; }
+.navgroup[open] .nav-caret { transform: rotate(180deg); }
+.navmenu { position: absolute; top: calc(100% + .4rem); left: 0; z-index: 30; margin: 0; padding: .35rem; min-width: 12rem;
+           background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color);
+           border-radius: var(--app-radius); box-shadow: 0 8px 24px rgba(0,0,0,.14); list-style: none; }
+.navmenu-end { left: auto; right: 0; }
+.navmenu li { margin: 0; }
+.navmenu form { margin: 0; }
+.navmenu-link { display: flex; align-items: center; gap: .55rem; width: 100%; padding: .5rem .7rem; border: 0; border-radius: .4rem;
+                background: none; font: inherit; font-size: .92rem; font-weight: 500; color: var(--pico-color);
+                text-decoration: none; text-align: left; cursor: pointer; white-space: nowrap; }
+.navmenu-link:hover { background: color-mix(in srgb, var(--pico-primary-background) 10%, transparent); color: var(--pico-primary-background); }
+.navmenu-link[aria-current="page"] { color: var(--pico-primary-background); background: color-mix(in srgb, var(--pico-primary-background) 12%, transparent); }
+
+/* ---- Auth pages (setup/login): standalone, no top nav, no reverse-proxy assumptions ---- */
+.auth-body { display: flex; min-height: 100vh; align-items: center; justify-content: center; padding: 1.5rem var(--app-gutter); }
+body.auth-body > main { max-width: 420px; padding: 0; margin: 0; min-height: 0; width: 100%; }
+.auth-brand { justify-content: center; margin-bottom: 1rem; font-size: 1.3rem; }
+.auth-card .page-head { justify-content: center; text-align: center; margin-bottom: .75rem; }
+.auth-card > p { color: var(--pico-muted-color); font-size: .9rem; margin-top: 0; }
+.auth-foot { text-align: center; margin: 1rem 0 0; font-size: .88rem; }

@@ -11,8 +11,11 @@ It is a web app: one static Go binary plus one SQLite file. No runtime dependenc
 - **Connections:** record how each device plugs into a switch or router: device NIC and switch port, and whether the link is an **Access** port (one untagged VLAN) or a **Trunk** (one or more tagged VLANs, plus an optional native VLAN). One NIC carrying, say, VLAN 10 for hypervisor management and VLAN 30 for services is a single trunk connection. A switch or device port can only be used once.
 - Automatic revision history: every change is versioned, and each record has a History page showing what changed and when.
 - Light and dark themes: follows your OS setting by default, with a toggle in the nav bar (choice is remembered per browser).
+- Grouped nav: the record types live under one **Inventory** dropdown, and your account under a second one, so the top bar stays to three items (Inventory, Topology, your username) instead of a long row of tabs.
 - Consistent online backup via `-backup`, and a version shown in the page footer.
 - **Network topology designer:** drag-and-drop diagrams (routers, firewalls, switches, servers, VLANs, and more) with labeled links. Add nodes from your inventory (or import it all: a device becomes a switch, router, firewall, etc. node according to its type, arranged in tiers under an Internet node, devices carry their VLANs as tags, services are dashed boxes linked to their host, and each Connection becomes a link labeled like `Trunk: 10,30 (native 1)` or `Access: 20`), then download as SVG or PNG or share a read-only link.
+- **Built-in login:** a session-cookie gate protects every route, including static assets — nothing but the login/setup pages, `/healthz`, and public share links is reachable without signing in. First run redirects to a one-time setup page that creates the operator account; more accounts (all with equal access, no roles) can be added from **Account**. Failed logins are rate-limited per IP.
+- **Password reset by email (optional):** add an email under **Account** and confirm it via a mailed link; once verified, "Forgot your password?" on the login page emails a one-hour reset link. Needs SMTP configured (see below) — without it, LabDoc works exactly as before, just without this recovery path.
 
 Not built yet: full-text search, and Markdown pages and export.
 
@@ -35,7 +38,21 @@ Open **Topology** in the nav, create a diagram, and:
 
 **Share…** creates a link like `/share/<random token>`. Anyone with the link can view that one diagram, read-only, without signing in. The link exposes only the diagram image, not your inventory or the rest of the app. **Stop sharing** revokes it immediately, and deleting the diagram does too. A new share gets a new token.
 
-Because LabDoc has no login of its own, your reverse proxy or Cloudflare Access is what protects everything else. To make share links work for people outside your network, that layer must let `/share/*` and `/static/*` through without authentication while still protecting all other paths. If you don't want any public link, don't use Share.
+Share links (`/share/*`) are the one deliberately public, read-only surface; everything else needs a LabDoc login (see below). If you also put LabDoc behind Cloudflare Access or another reverse-proxy auth layer, make sure that layer lets `/share/*` through unauthenticated too, or outside viewers won't be able to open the link. If you don't want any public link, don't use Share.
+
+## Authentication
+
+LabDoc has its own login: a session cookie, set after signing in, gates every route — including static assets — except `/login`, `/setup`, `/healthz`, and `/share/*`. On first run, any request redirects to **/setup**, a one-time page that creates the single operator account (bcrypt-hashed password, stored in `homelab.db`); once that account exists, `/setup` stops working and everything redirects to **/login** instead. From **Account** (top nav, once signed in) you can change your password or add further accounts — every account has identical access, there are no roles — and remove any account but the one you're currently using. Repeated failed logins from the same IP are locked out for 15 minutes after 5 attempts.
+
+Every state-changing request (every form, plus the topology editor's save/share actions) also carries a CSRF token, checked against a dedicated cookie before anything is written — a second, independent layer on top of the session cookie's own `SameSite=Lax` protection.
+
+This replaces needing Cloudflare Access or a proxy-level auth middleware just to keep LabDoc private; you can still add one in front for defense in depth (e.g. restricting the LXC to a trusted network), but it's no longer required.
+
+### Password reset by email
+
+An account's email is optional and separate from login — a username/password still works with no email on file. Add one under **Account**; LabDoc emails a confirmation link, and only a *verified* email is ever used to send a reset link (an unconfirmed one just sits there unused). "Forgot your password?" on the login page then emails a single-use link that expires in an hour and, once used, signs that account out everywhere.
+
+This needs outgoing SMTP configured (`-smtp-host` etc., below); it talks SMTP directly (Go's standard library, no external mail dependency), with STARTTLS on the usual submission port 587. Implicit-TLS port 465 isn't supported. Leaving `-smtp-host` blank (the default) disables email entirely — the setup/login/account flows all work exactly as before, they just skip the email section and "Forgot your password?" reports that email isn't configured.
 
 ## Build and run
 
@@ -52,6 +69,11 @@ CGO_ENABLED=0 go build -o labdoc ./cmd/labdoc
 | `-db` | `LABDOC_DB` | `homelab.db` | SQLite file |
 | `-backup PATH` | | | write a consistent copy and exit |
 | `-version` | | | print version and exit |
+| `-smtp-host` | `LABDOC_SMTP_HOST` | *(blank)* | SMTP server for outgoing email; blank disables email verification / password reset |
+| `-smtp-port` | `LABDOC_SMTP_PORT` | `587` | SMTP port (587/STARTTLS; 465 implicit TLS not supported) |
+| `-smtp-username` | `LABDOC_SMTP_USERNAME` | *(blank)* | SMTP username |
+| `-smtp-password` | `LABDOC_SMTP_PASSWORD` | *(blank)* | SMTP password |
+| `-smtp-from` | `LABDOC_SMTP_FROM` | *(blank)* | From address for outgoing email |
 
 Stamp a release version and cross-compile for a Linux LXC:
 
@@ -67,7 +89,7 @@ Pull requests to `main` are also reviewed and merged automatically by `.github/w
 
 1. Copy the binary to `/usr/local/bin/labdoc` and create a `labdoc` user.
 2. Install `deploy/labdoc.service` to `/etc/systemd/system/`, then `systemctl enable --now labdoc`.
-3. Put it behind a reverse proxy (e.g. Nginx Proxy Manager). **LabDoc has no authentication of its own**; use Cloudflare Access or proxy-level auth, and keep it bound to `127.0.0.1` or a trusted network.
+3. Put it behind a reverse proxy (e.g. Nginx Proxy Manager). LabDoc has its own login (see **Authentication** above); binding it to `127.0.0.1` or a trusted network, or layering Cloudflare Access in front, is optional defense in depth.
 
 ## Backup and restore
 
