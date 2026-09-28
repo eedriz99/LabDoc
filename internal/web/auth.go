@@ -42,7 +42,6 @@ const (
 type authUser struct {
 	ID       int64
 	Username string
-	Email    string // "" if none is on file yet; verification status isn't tracked here
 }
 
 type ctxKey int
@@ -187,16 +186,14 @@ func (s *Server) authenticate(r *http.Request) *authUser {
 		return nil
 	}
 	var u authUser
-	var email sql.NullString
 	var expires string
 	err = s.db.QueryRow(
-		`SELECT u.id, u.username, u.email, s.expires_at FROM sessions s
+		`SELECT u.id, u.username, s.expires_at FROM sessions s
 		 JOIN users u ON u.id = s.user_id WHERE s.token = ?`, c.Value).
-		Scan(&u.ID, &u.Username, &email, &expires)
+		Scan(&u.ID, &u.Username, &expires)
 	if err != nil {
 		return nil
 	}
-	u.Email = email.String
 	if t, err := time.Parse(time.RFC3339, expires); err != nil || time.Now().After(t) {
 		_, _ = s.db.Exec("DELETE FROM sessions WHERE token = ?", c.Value)
 		return nil
@@ -277,7 +274,6 @@ var publicExact = map[string]bool{
 	"/forgot-password":           true,
 	"/static/pico.min.css":       true,
 	"/static/app.css":            true,
-	"/static/favicon.svg":        true,
 	"/static/topology-export.js": true, // used by the public share page
 }
 
