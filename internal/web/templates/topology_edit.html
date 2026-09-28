@@ -152,6 +152,6 @@
 <script type="application/json" id="layout-json">{{.Layout}}</script>
 <script type="application/json" id="kinds-json">{{.Kinds}}</script>
 <script type="application/json" id="inventory-json">{{.Inventory}}</script>
-<script src="/static/topology-export.js"></script>
-<script src="/static/topology.js"></script>
+<script src="/static/topology-export.js?v={{version}}"></script>
+<script src="/static/topology.js?v={{version}}"></script>
 {{template "foot" .}}

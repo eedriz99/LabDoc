@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <meta name="referrer" content="no-referrer">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v={{version}}">
   <title>{{.Name}} · LabDoc</title>
-  <link rel="stylesheet" href="/static/pico.min.css">
+  <link rel="stylesheet" href="/static/pico.min.css?v={{version}}">
   <style>
     .frame { background: #fff; border-radius: .5rem; padding: .5rem; overflow: auto; }
     .frame img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
@@ -26,7 +27,7 @@
     </div>
     <footer><small>Shared read-only from LabDoc.</small></footer>
   </main>
-  <script src="/static/topology-export.js"></script>
+  <script src="/static/topology-export.js?v={{version}}"></script>
   <script>
     document.getElementById("btn-png").addEventListener("click", function (ev) {
       var b = ev.currentTarget, st = document.getElementById("png-status");

@@ -39,13 +39,28 @@ body > header {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 1rem;
 }
 .topbar .brand { justify-self: start; }
-.topbar #theme-toggle { justify-self: end; }
+/* Logo left; Inventory + Topology centered in the middle column; the account
+   menu (Account, Log out, the theme toggle, and, once set, the email
+   address) on its own in the right column. */
+.topbar .navaccount { justify-self: end; }
 .navlinks { flex-wrap: nowrap; min-width: 0; margin: 0; padding: 0; list-style: none; display: flex; align-items: center; justify-content: center; gap: clamp(.2rem, .6vw, .7rem); }
 .navlinks li { margin: 0; padding: 0; list-style: none; }
+/* Inventory has two markups in the DOM at once; only one shows at a time
+   (see the @media (max-width: 1199px) block below for the swap). */
+.nav-narrow-only { display: none; }
 .brand { display: inline-flex; align-items: center; gap: .55rem; font-weight: 700; font-size: clamp(1.05rem, .9rem + .35vw, 1.4rem);
          letter-spacing: -.01em; color: var(--pico-color); text-decoration: none; }
 .brand svg { width: 1.6rem; height: 1.6rem; color: var(--pico-primary-background); }
-.navlink { white-space: nowrap; display: inline-flex; align-items: center; gap: .4em; padding: .45em .8em; border-radius: .5rem; font-size: clamp(.84rem, .62rem + .42vw, 1.02rem); font-weight: 500;
+/* margin: 0 and line-height matter here specifically because .navlink is
+   also used on a <summary> (the Inventory/account dropdown triggers): Pico
+   gives every <summary> both a margin-bottom (meant for accordion-style
+   content below it) and a fixed line-height: 1rem (smaller than the normal
+   1.5 every <a> still inherits) -- neither of which the plain
+   <a class="navlink"> (Topology) gets. Left unreset, a <summary>'s shorter,
+   differently-spaced box centers at a different point in the row than an
+   <a>'s, despite identical padding/font-size on both. */
+.navlink { white-space: nowrap; display: inline-flex; align-items: center; gap: .4em; margin: 0; padding: .45em .8em;
+           line-height: var(--pico-line-height, 1.5); border-radius: .5rem; font-size: clamp(.84rem, .62rem + .42vw, 1.02rem); font-weight: 500;
            color: var(--pico-muted-color); text-decoration: none; transition: background .12s, color .12s; }
 .navlink:hover { background: var(--pico-secondary-background, rgba(127,127,127,.15)); background: color-mix(in srgb, var(--pico-color) 8%, transparent); color: var(--pico-color); }
 .navlink[aria-current="page"] { color: var(--pico-primary-background); background: color-mix(in srgb, var(--pico-primary-background) 12%, transparent); }
@@ -64,8 +79,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .icon { width: 1.1em; height: 1.1em; flex: none; stroke: currentColor; fill: none; stroke-width: 2;
         stroke-linecap: round; stroke-linejoin: round; vertical-align: -.15em; }
 .btn-icon { white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: .45rem; width: auto; margin: 0; }
-#theme-toggle { width: 2.25rem; height: 2.25rem; padding: 0; border-radius: 999px; }
-#theme-toggle .icon { width: 1.1rem; height: 1.1rem; }
+/* #theme-toggle now lives as a row in the account dropdown (.navmenu-link
+   handles its layout/spacing) -- only the icon-swap-by-theme rules are
+   still needed here. */
 :root:not([data-theme]) #theme-toggle .to-light { display: none; }
 [data-theme="dark"] #theme-toggle .to-dark, [data-theme="light"] #theme-toggle .to-light { display: none; }
 @media (prefers-color-scheme: dark) {
@@ -139,10 +155,16 @@ main article ul { margin: 0; padding: .6rem 1.1rem .6rem 2.2rem; }
 .tag-trunk { background: #7c3aed; }
 .tag-access { background: #15803d; }
 
-/* Once the labelled links can't shrink any further, drop the text and keep icons (still single row).
-   Nav tabs are grouped into a couple of dropdowns (see below), so there are only ever
-   a few top-level items now; no horizontal-scroll fallback needed for it any more. */
-@media (max-width: 1000px) {
+/* >1999px: every record type gets its own tab (.nav-wide-only), labeled.
+   900-1999px: folded into one Inventory dropdown (.nav-narrow-only) instead,
+   next to Topology -- still labeled ("annotated"), just consolidated.
+   <900px: once the labelled links can't shrink any further, drop the text
+   and keep icons (still single row). */
+@media (max-width: 1999px) {
+  .nav-wide-only { display: none; }
+  .nav-narrow-only { display: list-item; }
+}
+@media (max-width: 899px) {
   .navtext { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .navlinks { gap: .3rem; }
   .navlink { padding: .6em .7em; }
@@ -162,24 +184,40 @@ main article ul { margin: 0; padding: .6rem 1.1rem .6rem 2.2rem; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
                    clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
-/* ---- Nav dropdowns: grouped tabs (Inventory, the user menu), native <details>/<summary> ---- */
-.navgroup { position: relative; }
-.navgroup > summary { list-style: none; }
-.navgroup > summary::-webkit-details-marker { display: none; } /* Safari's default triangle */
+/* ---- Nav dropdowns: grouped tabs (Inventory, the user menu), native <details>/<summary> ----
+   Pico already styles a bare <summary> as a chevron-rotating disclosure (list-style, the
+   marker, the open/closed rotation): no role="button" here (it already has an implicit one),
+   since that would pull in Pico's filled-button skin instead. */
+/* margin: 0 kills a *second*, separate Pico rule from the one on .navlink:
+   details{margin-bottom:var(--pico-spacing)} applies to this wrapper itself,
+   not the <summary> inside it. Unreset, the extra margin below the <details>
+   grows its flex-item margin box past the plain <a class="navlink"> (Topology)
+   next to it, so align-items: center gives them different vertical positions
+   even though the .navlink content itself now measures identically. */
+.navgroup { position: relative; margin: 0; }
 .navgroup[open] > summary { color: var(--pico-color); background: color-mix(in srgb, var(--pico-color) 8%, transparent); }
-.nav-caret { width: .8em; height: .8em; margin-left: -.1em; transition: transform .15s; }
-.navgroup[open] .nav-caret { transform: rotate(180deg); }
-.navmenu { position: absolute; top: calc(100% + .4rem); left: 0; z-index: 30; margin: 0; padding: .35rem; min-width: 12rem;
+/* Pico's "nav ul/li" rules (meant for .navlinks) reach this nested list too
+   -- display: flex / inline-block -- since it's also inside <nav>; override
+   both back to a plain vertical menu. */
+.navmenu { display: block; position: absolute; top: calc(100% + .4rem); left: 0; z-index: 30; margin: 0; padding: .35rem; min-width: 12rem;
            background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color);
            border-radius: var(--app-radius); box-shadow: 0 8px 24px rgba(0,0,0,.14); list-style: none; }
 .navmenu-end { left: auto; right: 0; }
-.navmenu li { margin: 0; }
+.navmenu li { display: block; margin: 0; padding: 0; }
 .navmenu form { margin: 0; }
-.navmenu-link { display: flex; align-items: center; gap: .55rem; width: 100%; padding: .5rem .7rem; border: 0; border-radius: .4rem;
-                background: none; font: inherit; font-size: .92rem; font-weight: 500; color: var(--pico-color);
+/* --pico-color itself isn't safe to use here: Pico's own button/link rules
+   redefine it locally (white on <button>, assuming a filled background;
+   primary blue on <a>), and either shadows whatever a class sets for the
+   *property* even at higher specificity. --pico-muted-color isn't
+   redefined that way -- same reason .navlink (above) uses it too. */
+.navmenu-link { display: flex; align-items: center; gap: .55rem; width: 100%; margin: 0; padding: .5rem .7rem; border: 0; border-radius: .4rem;
+                background: none; font: inherit; font-size: .92rem; font-weight: 500; color: var(--pico-muted-color);
                 text-decoration: none; text-align: left; cursor: pointer; white-space: nowrap; }
 .navmenu-link:hover { background: color-mix(in srgb, var(--pico-primary-background) 10%, transparent); color: var(--pico-primary-background); }
 .navmenu-link[aria-current="page"] { color: var(--pico-primary-background); background: color-mix(in srgb, var(--pico-primary-background) 12%, transparent); }
+/* The signed-in account's email, once set: an info line, not a menu item. */
+.navmenu-email { margin-top: .3rem; padding: .5rem .7rem 0; border-top: 1px solid var(--pico-muted-border-color);
+                 font-size: .82rem; color: var(--pico-muted-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---- Auth pages (setup/login): standalone, no top nav, no reverse-proxy assumptions ---- */
 .auth-body { display: flex; min-height: 100vh; align-items: center; justify-content: center; padding: 1.5rem var(--app-gutter); }

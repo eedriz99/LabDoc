@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{.CSRFToken}}">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v={{version}}">
   <title>{{.Title}} · LabDoc</title>
   <script>
     // Apply a saved theme before first paint to avoid a light flash. With no
@@ -13,9 +14,9 @@
       if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
     } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/static/pico.min.css">
-  <link rel="stylesheet" href="/static/app.css">
-  <script src="/static/htmx.min.js" defer></script>
+  <link rel="stylesheet" href="/static/pico.min.css?v={{version}}">
+  <link rel="stylesheet" href="/static/app.css?v={{version}}">
+  <script src="/static/htmx.min.js?v={{version}}" defer></script>
   <script>
     // htmx intercepts hx-boost forms/links too, so this covers every write
     // the UI makes (including hx-post delete links, which carry no form
@@ -80,35 +81,39 @@
     <nav class="topbar" aria-label="Main">
       <a class="brand" href="/">{{template "i-logo"}}LabDoc</a>
       <ul class="navlinks">
-        <li>
+        <!-- >1999px: every record type is its own tab. Below that: folded
+             into one Inventory dropdown (see the @media block in app.css). -->
+        {{range .Nav}}<li class="nav-wide-only"><a class="navlink" href="/{{.Key}}" title="{{.Plural}}">{{template "i-nav" .Key}}<span class="navtext">{{.Plural}}</span></a></li>{{end}}
+        <li class="nav-narrow-only">
           <details class="navgroup">
-            <summary class="navlink" role="button" aria-haspopup="menu" title="Inventory">{{template "i-db"}}<span class="navtext">Inventory</span>{{template "i-caret"}}</summary>
+            <summary class="navlink" aria-haspopup="menu" title="Inventory">{{template "i-db"}}<span class="navtext">Inventory</span></summary>
             <ul class="navmenu" role="menu">
               {{range .Nav}}<li role="none"><a class="navmenu-link" role="menuitem" href="/{{.Key}}">{{template "i-nav" .Key}}{{.Plural}}</a></li>{{end}}
             </ul>
           </details>
         </li>
         <li><a class="navlink" href="/topologies" title="Topology">{{template "i-nav" "topology"}}<span class="navtext">Topology</span></a></li>
-        {{if .User}}
-        <li>
-          <details class="navgroup">
-            <summary class="navlink" role="button" aria-haspopup="menu" title="Account ({{.User.Username}})">{{template "i-user"}}<span class="navtext">{{.User.Username}}</span>{{template "i-caret"}}</summary>
-            <ul class="navmenu navmenu-end" role="menu">
-              <li role="none"><a class="navmenu-link" role="menuitem" href="/account">{{template "i-user"}}Account</a></li>
-              <li role="none">
-                <form method="post" action="/logout">
-                  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-                  <button type="submit" class="navmenu-link" role="menuitem">{{template "i-logout"}}Log out</button>
-                </form>
-              </li>
-            </ul>
-          </details>
-        </li>
-        {{end}}
       </ul>
-      <button type="button" id="theme-toggle" class="secondary outline btn-icon" aria-label="Toggle dark mode" title="Toggle dark mode">
-        <span class="to-dark">{{template "i-moon"}}</span><span class="to-light">{{template "i-sun"}}</span>
-      </button>
+      {{if .User}}
+      <details class="navgroup navaccount">
+        <summary class="navlink" aria-haspopup="menu" title="Account ({{.User.Username}})">{{template "i-user"}}<span class="navtext">{{.User.Username}}</span></summary>
+        <ul class="navmenu navmenu-end" role="menu">
+          <li role="none"><a class="navmenu-link" role="menuitem" href="/account">{{template "i-user"}}Account</a></li>
+          <li role="none">
+            <form method="post" action="/logout">
+              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <button type="submit" class="navmenu-link" role="menuitem">{{template "i-logout"}}Log out</button>
+            </form>
+          </li>
+          <li role="none">
+            <button type="button" id="theme-toggle" class="navmenu-link" role="menuitem" aria-label="Toggle dark mode">
+              <span class="to-dark">{{template "i-moon"}}</span><span class="to-light">{{template "i-sun"}}</span>Theme
+            </button>
+          </li>
+          {{if .User.Email}}<li class="navmenu-email" role="none">{{.User.Email}}</li>{{end}}
+        </ul>
+      </details>
+      {{end}}
     </nav>
   </header>
   <main>
@@ -141,5 +146,4 @@
 {{define "i-layout"}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="9" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v5M5 17v-5h14v5M12 12v5"/></svg>{{end}}
 {{define "i-tag"}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>{{end}}
 {{define "i-user"}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>{{end}}
-{{define "i-caret"}}<svg class="icon nav-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>{{end}}
 {{define "i-logout"}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg>{{end}}
