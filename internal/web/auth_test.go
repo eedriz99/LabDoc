@@ -153,7 +153,7 @@ func TestPublicPathsBypassAuth(t *testing.T) {
 	// /setup is deliberately excluded here: it's on the public allowlist too,
 	// but once an account exists its handler itself redirects to /login
 	// (covered by TestUnauthenticatedRedirectsToSetupThenLogin).
-	for _, path := range []string{"/login", "/healthz", "/static/pico.min.css", "/static/app.css", "/static/topology-export.js"} {
+	for _, path := range []string{"/login", "/healthz", "/static/pico.min.css", "/static/app.css", "/static/favicon.svg", "/static/topology-export.js"} {
 		if code, _ := out.get(path); code == http.StatusSeeOther {
 			t.Errorf("GET %s should be public, got a redirect", path)
 		}
